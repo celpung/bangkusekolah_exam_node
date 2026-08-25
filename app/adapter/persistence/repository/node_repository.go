@@ -221,6 +221,20 @@ func (r *nodeRepository) FindParticipantByAccessCode(ctx context.Context, code s
 	return mapper.ToParticipantEntity(&m), nil
 }
 
+func (r *nodeRepository) ListItemsByExam(ctx context.Context) ([]entity.Item, error) {
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Item
+	// idx_items_order (section_sort_order, sort_order) makes this an ordered scan.
+	if err := db.Order("section_sort_order ASC, sort_order ASC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list items: %w", err)
+	}
+	entities := make([]entity.Item, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToItemEntity(&models[i])
+	}
+	return entities, nil
+}
+
 func (r *nodeRepository) FindAttemptByIDForUpdate(ctx context.Context, id string) (*entity.Attempt, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Attempt
