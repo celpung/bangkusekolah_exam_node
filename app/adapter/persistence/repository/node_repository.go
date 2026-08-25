@@ -205,6 +205,19 @@ func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time)
 	return entities, nil
 }
 
+func (r *nodeRepository) FindParticipantByAccessCode(ctx context.Context, code string) (*entity.Participant, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Participant
+	// uniq_participants_access_code makes this a unique lookup.
+	if err := db.Where("access_code = ?", code).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrInvalidAccessCode
+		}
+		return nil, err
+	}
+	return mapper.ToParticipantEntity(&m), nil
+}
+
 func (r *nodeRepository) FindAttemptByIDForUpdate(ctx context.Context, id string) (*entity.Attempt, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Attempt

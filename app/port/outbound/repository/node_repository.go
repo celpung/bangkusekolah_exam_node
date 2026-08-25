@@ -25,4 +25,5 @@ type NodeRepository interface {
 	UpdateAttempt(ctx context.Context, attempt *entity.Attempt) error
 	ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error)
 	FindAttemptByIDForUpdate(ctx context.Context, attemptID string) (*entity.Attempt, error)
+	FindParticipantByAccessCode(ctx context.Context, code string) (*entity.Participant, error)
 }

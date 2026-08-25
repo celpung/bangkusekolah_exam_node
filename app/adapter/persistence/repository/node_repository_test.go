@@ -84,6 +84,12 @@ func TestNodeFindItemByIDSelectsRow(t *testing.T) {
 	requireSQLContaining(t, recorded, "SELECT * FROM `items`", "WHERE id = ?")
 }
 
+func TestNodeFindParticipantByAccessCodeSelectsRow(t *testing.T) {
+	db, recorded := newDryRunDB(t)
+	_, _ = (&nodeRepository{db: db}).FindParticipantByAccessCode(context.Background(), "K7M2QX-3B9FTD")
+	requireSQLContaining(t, recorded, "SELECT * FROM `participants`", "WHERE access_code = ?")
+}
+
 func TestNodeRepositoryUsesTxFromContext(t *testing.T) {
 	db, recorded := newDryRunDB(t)
 	tx := db.Session(&gorm.Session{})
