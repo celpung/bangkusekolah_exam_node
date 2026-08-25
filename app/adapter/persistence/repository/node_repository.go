@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/mapper"
@@ -208,12 +209,14 @@ func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time)
 func (r *nodeRepository) FindParticipantByAccessCode(ctx context.Context, code string) (*entity.Participant, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Participant
-	// uniq_participants_access_code makes this a unique lookup.
+	// uniq_participants_access_code makes this a unique lookup. Only
+	// not-found maps to the client-facing invalid-code error; infrastructure
+	// errors propagate unchanged so outages surface as 5xx, not 401.
 	if err := db.Where("access_code = ?", code).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, node_error.ErrInvalidAccessCode
 		}
-		return nil, err
+		return nil, fmt.Errorf("find participant by access code: %w", err)
 	}
 	return mapper.ToParticipantEntity(&m), nil
 }
