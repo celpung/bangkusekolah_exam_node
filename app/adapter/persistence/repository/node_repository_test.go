@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
@@ -96,4 +97,28 @@ func TestNodeCreateAttemptUsesTxFromContext(t *testing.T) {
 	ctx := helper.WithTx(context.Background(), tx)
 	_ = (&nodeRepository{db: db}).CreateAttempt(ctx, &entity.Attempt{ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", AttemptNo: 1, Status: entity.AttemptInProgress, MaxScore: 40})
 	requireSQLContaining(t, recorded, "INSERT INTO `attempts`")
+}
+
+func TestNodeUpsertAnswerSingleStatementOnDuplicateKey(t *testing.T) {
+	db, recorded := newDryRunDB(t)
+	_, _ = (&nodeRepository{db: db}).UpsertAnswer(context.Background(), &entity.Answer{
+		ID: "ans-1", AttemptID: "att-1", ItemID: "item-1",
+		AnswerJSON: map[string]interface{}{"answer": "A"}, MaxScore: 10,
+		GradingStatus: entity.GradingAutoGraded, LastSavedAt: time.Now().UTC(), ClientSeq: 3,
+	})
+	stmt := requireSQLContaining(t, recorded, "INSERT INTO `answers`", "ON CONFLICT (`attempt_id`,`item_id`) DO UPDATE SET")
+	if !strings.Contains(stmt.SQL, "client_seq") {
+		t.Fatalf("upsert must guard client_seq: %s", stmt.SQL)
+	}
+}
+
+func TestNodeUpsertAnswerUsesTxFromContext(t *testing.T) {
+	db, recorded := newDryRunDB(t)
+	tx := db.Session(&gorm.Session{})
+	ctx := helper.WithTx(context.Background(), tx)
+	_, _ = (&nodeRepository{db: db}).UpsertAnswer(ctx, &entity.Answer{
+		ID: "ans-1", AttemptID: "att-1", ItemID: "item-1",
+		MaxScore: 10, GradingStatus: entity.GradingPending, LastSavedAt: time.Now().UTC(), ClientSeq: 1,
+	})
+	requireSQLContaining(t, recorded, "INSERT INTO `answers`", "ON CONFLICT (`attempt_id`,`item_id`) DO UPDATE SET")
 }

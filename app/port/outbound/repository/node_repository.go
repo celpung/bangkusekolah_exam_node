@@ -16,5 +16,9 @@ type NodeRepository interface {
 	CreateAttempt(ctx context.Context, attempt *entity.Attempt) error
 	UpdateParticipant(ctx context.Context, p *entity.Participant) error
 	CountAttemptsByParticipant(ctx context.Context, participantID string) (int, error)
+	// UpsertAnswer is a single INSERT ... ON DUPLICATE KEY UPDATE statement keyed
+	// by (attempt_id, item_id). It returns ErrStaleAnswerWrite if the stored
+	// client_seq is >= the incoming one.
+	UpsertAnswer(ctx context.Context, answer *entity.Answer) (*entity.Answer, error)
 	FindItemByID(ctx context.Context, itemID string) (*entity.Item, error)
 }

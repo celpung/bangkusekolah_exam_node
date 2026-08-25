@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/mapper"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/model"
@@ -133,6 +134,34 @@ func (r *nodeRepository) FindItemByID(ctx context.Context, id string) (*entity.I
 		return nil, err
 	}
 	return mapper.ToItemEntity(&m), nil
+}
+
+func (r *nodeRepository) UpsertAnswer(ctx context.Context, ans *entity.Answer) (*entity.Answer, error) {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToAnswerModel(ans)
+	// Single statement keyed by the unique index (attempt_id, item_id). The
+	// GREATEST guard keeps client_seq monotonic at the SQL level so a delayed
+	// retry can never lower the stored seq; RowsAffected tells insert (2 cols
+	// change on duplicate in MySQL semantics aside, we re-read via returning m).
+	res := db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "attempt_id"}, {Name: "item_id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"answer_json":    m.AnswerJSON,
+			"answer_text":    m.AnswerText,
+			"score":          m.Score,
+			"max_score":      m.MaxScore,
+			"grading_status": m.GradingStatus,
+			"last_saved_at":  m.LastSavedAt,
+			"client_seq":     gorm.Expr("GREATEST(client_seq, VALUES(client_seq))"),
+		}),
+	}).Create(m)
+	if res.Error != nil {
+		if errors.Is(res.Error, gorm.ErrDuplicatedKey) {
+			return nil, node_error.ErrStaleAnswerWrite
+		}
+		return nil, res.Error
+	}
+	return mapper.ToAnswerEntity(m), nil
 }
 
 // Ensure json import is used for future extensions

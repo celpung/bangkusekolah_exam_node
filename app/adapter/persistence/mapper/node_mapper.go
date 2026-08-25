@@ -52,6 +52,20 @@ func ToAnswerEntity(m *model.Answer) *entity.Answer {
 	return &entity.Answer{ID: m.ID, AttemptID: m.AttemptID, ItemID: m.ItemID, AnswerJSON: aj, AnswerText: m.AnswerText, Score: m.Score, MaxScore: m.MaxScore, GradingStatus: entity.GradingStatus(m.GradingStatus), LastSavedAt: m.LastSavedAt, ClientSeq: m.ClientSeq}
 }
 
+func ToAnswerModel(e *entity.Answer) *model.Answer {
+	if e == nil {
+		return nil
+	}
+	var aj *string
+	if e.AnswerJSON != nil {
+		if b, err := json.Marshal(e.AnswerJSON); err == nil {
+			s := string(b)
+			aj = &s
+		}
+	}
+	return &model.Answer{ID: e.ID, AttemptID: e.AttemptID, ItemID: e.ItemID, AnswerJSON: aj, AnswerText: e.AnswerText, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), LastSavedAt: e.LastSavedAt, ClientSeq: e.ClientSeq}
+}
+
 func ToItemEntity(m *model.Item) *entity.Item {
 	if m == nil {
 		return nil

@@ -7,6 +7,7 @@ import (
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
+	"github.com/celpung/bangkusekolah_exam_node/app/domain/grading"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
@@ -103,4 +104,42 @@ func (s *AttemptService) GetAttemptState(ctx context.Context, participantID, att
 		return nil, err
 	}
 	return &inbound.AttemptState{Attempt: attempt, Answers: answers, ServerTime: time.Now().UTC()}, nil
+}
+
+func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID string, answerJSON map[string]interface{}, answerText *string, clientSeq int64, participantID string) (*entity.Answer, error) {
+	attempt, err := s.repo.FindAttemptByID(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if attempt.ParticipantID != participantID {
+		return nil, node_error.ErrForbidden
+	}
+	if attempt.Status != entity.AttemptInProgress {
+		return nil, node_error.ErrAttemptLocked
+	}
+	if time.Now().After(attempt.DueAt) {
+		return nil, node_error.ErrAttemptExpired
+	}
+	item, err := s.repo.FindItemByID(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	// Grade inline — cheap, and makes submit fast. Essay and other manual types
+	// return (0, false) and are stored as manual_required.
+	score, graded := grading.GradeObjectiveAnswer(*item, &entity.Answer{AnswerJSON: answerJSON})
+	var scorePtr *float64
+	gradingStatus := entity.GradingPending
+	if graded {
+		scorePtr = &score
+		gradingStatus = entity.GradingAutoGraded
+	} else if item.RequiresManualGrading {
+		gradingStatus = entity.GradingManualRequired
+	}
+	answer := &entity.Answer{
+		ID: s.idGen.NewID(), AttemptID: attemptID, ItemID: itemID,
+		AnswerJSON: answerJSON, AnswerText: answerText,
+		Score: scorePtr, MaxScore: item.Points, GradingStatus: gradingStatus,
+		LastSavedAt: time.Now().UTC(), ClientSeq: clientSeq,
+	}
+	return s.repo.UpsertAnswer(ctx, answer)
 }
