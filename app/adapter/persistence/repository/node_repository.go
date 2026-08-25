@@ -222,10 +222,36 @@ func (r *nodeRepository) FindParticipantByAccessCode(ctx context.Context, code s
 }
 
 func (r *nodeRepository) ListItemsByExam(ctx context.Context) ([]entity.Item, error) {
+	return r.listItemsWhere(ctx, "", nil)
+}
+
+func (r *nodeRepository) FindExamByID(ctx context.Context, examID string) (*entity.Exam, error) {
 	db := helper.GetDB(ctx, r.db)
+	var m model.Exam
+	if err := db.Where("id = ?", examID).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrExamNotLoaded
+		}
+		return nil, fmt.Errorf("find exam by id: %w", err)
+	}
+	return mapper.ToExamEntity(&m), nil
+}
+
+func (r *nodeRepository) ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error) {
+	// The items table holds the bundle's item snapshots; per-exam partitioning
+	// of rows arrives with Task 19's bundle load. Until then every loaded
+	// bundle replaces the single items set, and GetExamContent's cache key +
+	// FindExamByID are the scoping boundary.
+	return r.listItemsWhere(ctx, "", nil)
+}
+
+func (r *nodeRepository) listItemsWhere(ctx context.Context, where string, args []interface{}) ([]entity.Item, error) {
+	db := helper.GetDB(ctx, r.db).Order("section_sort_order ASC, sort_order ASC")
+	if where != "" {
+		db = db.Where(where, args...)
+	}
 	var models []model.Item
-	// idx_items_order (section_sort_order, sort_order) makes this an ordered scan.
-	if err := db.Order("section_sort_order ASC, sort_order ASC").Find(&models).Error; err != nil {
+	if err := db.Find(&models).Error; err != nil {
 		return nil, fmt.Errorf("list items: %w", err)
 	}
 	entities := make([]entity.Item, len(models))

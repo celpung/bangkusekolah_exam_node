@@ -7,11 +7,18 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
+	node_middleware "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/middleware"
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/provider"
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
+	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
+	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
+	"github.com/celpung/bangkusekolah_exam_node/app/service"
 )
 
 func main() {
@@ -27,11 +34,19 @@ func main() {
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 
+	repo := repository.NewNodeRepository(db)
+	txManager := helper.NewTxManager(db)
+	idGen := &uuidGenerator{}
+	issuer := node_security.NewJWTIssuer(cfg)
+	contentSvc := service.NewContentService(repo)
+	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
+
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Compress(5))
-	r.Use(middleware.Throttle(cfg.MaxInflightRequests))
+	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.Recoverer)
+	// Content is pre-gzipped and served with its own Vary header; chi's
+	// Compress middleware would re-wrap it, so it stays off.
+	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
 	r.Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -47,7 +62,9 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
 
-	// routes are registered here
+	// Student sitting flow: JWT auth + cached content + attempt state.
+	r.Mount("/api/v1/student", router.NewStudentRouter(issuer, contentSvc, attemptSvc))
+	_ = node_middleware.ParticipantIDFromContext // referenced so the import stays meaningful
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
@@ -59,3 +76,7 @@ func main() {
 		log.Fatalf("server: %v", err)
 	}
 }
+
+type uuidGenerator struct{}
+
+func (*uuidGenerator) NewID() string { return uuid.NewString() }

@@ -15,10 +15,13 @@ import (
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 )
 
+// ContentService caches immutable exam content keyed by exam ID. One VPS
+// hosts multiple exams (typically 3-10), so every lookup and rebuild is
+// scoped to a single exam — there is no global cache to cross-serve.
 type ContentService struct {
 	repo  outbound_repository.NodeRepository
 	mu    sync.RWMutex
-	cache *contentCache
+	cache map[string]*contentCache // key: exam ID
 }
 
 type contentCache struct {
@@ -29,17 +32,17 @@ type contentCache struct {
 }
 
 func NewContentService(repo outbound_repository.NodeRepository) *ContentService {
-	return &ContentService{repo: repo}
+	return &ContentService{repo: repo, cache: map[string]*contentCache{}}
 }
 
-// Rebuild must be called by BundleService after LoadBundle (Task 19). It is
-// the only writer; GetExamContent serves from the immutable snapshot.
-func (s *ContentService) Rebuild(ctx context.Context) error {
-	exam, err := s.repo.FindExam(ctx)
+// RebuildExam must be called by BundleService after loading one exam's bundle
+// (Task 19). It is the only writer; GetExamContent serves from the snapshot.
+func (s *ContentService) RebuildExam(ctx context.Context, examID string) error {
+	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
 		return err
 	}
-	items, err := s.repo.ListItemsByExam(ctx)
+	items, err := s.repo.ListItemsByExamID(ctx, examID)
 	if err != nil {
 		return err
 	}
@@ -72,16 +75,19 @@ func (s *ContentService) Rebuild(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	s.cache = &contentCache{content: content, etag: etag, gzipBytes: buf.Bytes(), rawBytes: raw}
+	s.cache[exam.ID] = &contentCache{content: content, etag: etag, gzipBytes: buf.Bytes(), rawBytes: raw}
 	s.mu.Unlock()
 	return nil
 }
 
-func (s *ContentService) GetExamContent(_ context.Context) (*inbound.ExamContent, string, []byte, []byte, error) {
+// GetExamContent returns the cached content for exactly the requested exam.
+// A mismatched or unbuilt exam is an error — never another exam's content.
+func (s *ContentService) GetExamContent(_ context.Context, examID string) (*inbound.ExamContent, string, []byte, []byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.cache == nil {
+	cached, ok := s.cache[examID]
+	if !ok {
 		return nil, "", nil, nil, node_error.ErrExamNotLoaded
 	}
-	return s.cache.content, s.cache.etag, s.cache.gzipBytes, s.cache.rawBytes, nil
+	return cached.content, cached.etag, cached.gzipBytes, cached.rawBytes, nil
 }

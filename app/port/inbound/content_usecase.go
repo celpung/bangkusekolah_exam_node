@@ -13,7 +13,9 @@ type ExamContent struct {
 
 // ExamItemDTO renames the persistence fields to what the client renders.
 // AnswerKeySnapshotJSON and RubricCriteria are never sent to the student —
-// the node grades locally, so the keys stay in the DB.
+// the node grades locally, so the keys stay in the DB. Sections are embedded
+// per item (section_id/section_title/section_sort_order) rather than emitted
+// as a separate array — the client groups by those fields directly.
 type ExamItemDTO struct {
 	ID                    string                   `json:"id"`
 	SectionID             string                   `json:"section_id"`
@@ -28,7 +30,9 @@ type ExamItemDTO struct {
 }
 
 type ContentUsecase interface {
-	// GetExamContent returns the cached immutable content, its quoted ETag,
-	// the pre-gzipped bytes, and the raw JSON bytes (for clients without gzip).
-	GetExamContent(ctx context.Context) (content *ExamContent, etag string, gzipBytes []byte, rawBytes []byte, err error)
+	// GetExamContent returns the cached immutable content for exactly this
+	// exam, with its quoted ETag, pre-gzipped bytes and raw JSON bytes.
+	// One VPS hosts multiple exams; a request for an exam that is not loaded
+	// is an error, never another exam's content.
+	GetExamContent(ctx context.Context, examID string) (content *ExamContent, etag string, gzipBytes []byte, rawBytes []byte, err error)
 }

@@ -27,4 +27,6 @@ type NodeRepository interface {
 	FindAttemptByIDForUpdate(ctx context.Context, attemptID string) (*entity.Attempt, error)
 	FindParticipantByAccessCode(ctx context.Context, code string) (*entity.Participant, error)
 	ListItemsByExam(ctx context.Context) ([]entity.Item, error)
+	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
+	ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error)
 }
