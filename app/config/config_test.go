@@ -34,6 +34,10 @@ func TestLoadAppliesTheDocumentedPoolDefaults(t *testing.T) {
 	if cfg.HarvestInterval != 5*time.Minute || cfg.SweepInterval != time.Minute {
 		t.Fatalf("tickers = %v harvest / %v sweep, want 5m / 1m", cfg.HarvestInterval, cfg.SweepInterval)
 	}
+	// Task 16 contract: student JWT lives 90 minutes when NODE_JWT_TTL is unset.
+	if cfg.JWTTTL != 90*time.Minute {
+		t.Fatalf("jwt ttl default = %v, want 90m", cfg.JWTTTL)
+	}
 }
 
 func TestLoadRejectsAShortJWTSecret(t *testing.T) {

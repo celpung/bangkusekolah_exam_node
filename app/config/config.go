@@ -36,13 +36,15 @@ const (
 	defaultDBMaxIdleConns      = 25
 	defaultDBConnMaxLifetime   = 30 * time.Minute
 	defaultMaxInflightRequests = 400
-	defaultJWTTTL              = 6 * time.Hour
-	defaultHarvestInterval     = 5 * time.Minute
-	defaultSweepInterval       = time.Minute
-	defaultHeartbeatInterval   = time.Minute
-	defaultLoginRateLimit      = 10
-	defaultLoginRateWindow     = time.Minute
-	minJWTSecretLength         = 32
+	// Student JWTs live 90 minutes per the Task 16 contract; an unconfigured
+	// deployment must not silently issue six-hour tokens.
+	defaultJWTTTL            = 90 * time.Minute
+	defaultHarvestInterval   = 5 * time.Minute
+	defaultSweepInterval     = time.Minute
+	defaultHeartbeatInterval = time.Minute
+	defaultLoginRateLimit    = 10
+	defaultLoginRateWindow   = time.Minute
+	minJWTSecretLength       = 32
 )
 
 func Load() (*Config, error) {
