@@ -11,6 +11,7 @@ import (
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type nodeRepository struct {
@@ -37,6 +38,18 @@ func (r *nodeRepository) FindParticipantByID(ctx context.Context, id string) (*e
 	db := helper.GetDB(ctx, r.db)
 	var m model.Participant
 	if err := db.Where("id = ?", id).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrParticipantNotFound
+		}
+		return nil, err
+	}
+	return mapper.ToParticipantEntity(&m), nil
+}
+
+func (r *nodeRepository) FindParticipantByIDForUpdate(ctx context.Context, id string) (*entity.Participant, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Participant
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, node_error.ErrParticipantNotFound
 		}

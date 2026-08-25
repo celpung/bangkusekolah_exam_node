@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
@@ -36,8 +37,12 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID string)
 	if err != nil {
 		return nil, err
 	}
-	if active, err := s.repo.FindActiveAttemptByParticipant(ctx, participantID); err == nil {
+	active, err := s.repo.FindActiveAttemptByParticipant(ctx, participantID)
+	if err == nil {
 		return active, nil
+	}
+	if !errors.Is(err, node_error.ErrAttemptNotFound) {
+		return nil, err
 	}
 	if participant.AttemptCount >= exam.MaxAttempts {
 		return nil, node_error.ErrMaxAttemptsReached
@@ -46,24 +51,43 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID string)
 	if due.After(exam.EndsAt) {
 		due = exam.EndsAt
 	}
-	attemptNo := participant.AttemptCount + 1
-	attempt := &entity.Attempt{
-		ParticipantID: participantID, StudentID: participant.StudentID,
-		AttemptNo: attemptNo, Status: entity.AttemptInProgress,
-		StartedAt: now, DueAt: due, MaxScore: exam.MaxScore, GradingStatus: entity.GradingPending,
-	}
-	attempt.ID = s.idGen.NewID()
-	if err := s.txManager.Atomic(ctx, func(ctx context.Context) error {
-		if err := s.repo.CreateAttempt(ctx, attempt); err != nil {
+	var result *entity.Attempt
+	err = s.txManager.Atomic(ctx, func(txCtx context.Context) error {
+		locked, err := s.repo.FindParticipantByIDForUpdate(txCtx, participantID)
+		if err != nil {
 			return err
 		}
-		participant.AttemptCount = attemptNo
-		participant.LatestAttemptID = &attempt.ID
-		return s.repo.UpdateParticipant(ctx, participant)
-	}); err != nil {
+		if active, err := s.repo.FindActiveAttemptByParticipant(txCtx, participantID); err == nil {
+			result = active
+			return nil
+		} else if !errors.Is(err, node_error.ErrAttemptNotFound) {
+			return err
+		}
+		if locked.AttemptCount >= exam.MaxAttempts {
+			return node_error.ErrMaxAttemptsReached
+		}
+		attemptNo := locked.AttemptCount + 1
+		attempt := &entity.Attempt{
+			ParticipantID: participantID, StudentID: locked.StudentID,
+			AttemptNo: attemptNo, Status: entity.AttemptInProgress,
+			StartedAt: now, DueAt: due, MaxScore: exam.MaxScore, GradingStatus: entity.GradingPending,
+		}
+		attempt.ID = s.idGen.NewID()
+		if err := s.repo.CreateAttempt(txCtx, attempt); err != nil {
+			return err
+		}
+		locked.AttemptCount = attemptNo
+		locked.LatestAttemptID = &attempt.ID
+		if err := s.repo.UpdateParticipant(txCtx, locked); err != nil {
+			return err
+		}
+		result = attempt
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return attempt, nil
+	return result, nil
 }
 
 func (s *AttemptService) GetAttemptState(ctx context.Context, participantID, attemptID string) (*inbound.AttemptState, error) {

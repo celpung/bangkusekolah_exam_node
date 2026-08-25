@@ -9,6 +9,7 @@ import (
 type NodeRepository interface {
 	FindExam(ctx context.Context) (*entity.Exam, error)
 	FindParticipantByID(ctx context.Context, participantID string) (*entity.Participant, error)
+	FindParticipantByIDForUpdate(ctx context.Context, participantID string) (*entity.Participant, error)
 	FindActiveAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error)
 	FindAttemptByID(ctx context.Context, attemptID string) (*entity.Attempt, error)
 	ListAnswersByAttempt(ctx context.Context, attemptID string) ([]entity.Answer, error)

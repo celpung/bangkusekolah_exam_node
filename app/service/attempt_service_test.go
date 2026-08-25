@@ -18,6 +18,8 @@ type fakeNodeRepo struct {
 	attempts     map[string]*entity.Attempt
 	answers      map[string][]entity.Answer
 	createCalls  int
+	updateCalls  int
+	activeErr    error
 }
 
 func (f *fakeNodeRepo) FindExam(_ context.Context) (*entity.Exam, error) {
@@ -32,7 +34,16 @@ func (f *fakeNodeRepo) FindParticipantByID(_ context.Context, id string) (*entit
 	}
 	return nil, node_error.ErrParticipantNotFound
 }
+func (f *fakeNodeRepo) FindParticipantByIDForUpdate(_ context.Context, id string) (*entity.Participant, error) {
+	if p, ok := f.participants[id]; ok {
+		return p, nil
+	}
+	return nil, node_error.ErrParticipantNotFound
+}
 func (f *fakeNodeRepo) FindActiveAttemptByParticipant(_ context.Context, pid string) (*entity.Attempt, error) {
+	if f.activeErr != nil {
+		return nil, f.activeErr
+	}
 	for _, a := range f.attempts {
 		if a.ParticipantID == pid && a.Status == entity.AttemptInProgress {
 			return a, nil
@@ -55,6 +66,7 @@ func (f *fakeNodeRepo) CreateAttempt(_ context.Context, a *entity.Attempt) error
 	return nil
 }
 func (f *fakeNodeRepo) UpdateParticipant(_ context.Context, p *entity.Participant) error {
+	f.updateCalls++
 	f.participants[p.ID] = p
 	return nil
 }
@@ -176,5 +188,17 @@ func TestGetAttemptStateRejectsWrongOwner(t *testing.T) {
 	svc := newAttemptService(repo)
 	if _, err := svc.GetAttemptState(context.Background(), "part-2", "att-1"); !errors.Is(err, node_error.ErrForbidden) {
 		t.Fatalf("want ErrForbidden, got %v", err)
+	}
+}
+
+func TestStartAttemptPropagatesDBErrorOnActiveLookup(t *testing.T) {
+	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{}, activeErr: errors.New("db unavailable")}
+	svc := newAttemptService(repo)
+	_, err := svc.StartAttempt(context.Background(), "part-1")
+	if err == nil || err.Error() != "db unavailable" {
+		t.Fatalf("want db unavailable, got %v", err)
+	}
+	if repo.createCalls != 0 || repo.updateCalls != 0 {
+		t.Fatalf("must not write on db read failure: create %d update %d", repo.createCalls, repo.updateCalls)
 	}
 }
