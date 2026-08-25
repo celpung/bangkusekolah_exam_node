@@ -24,10 +24,26 @@ func (f *fakeSubmitRepo) FindAttemptByID(_ context.Context, id string) (*entity.
 	}
 	return nil, node_error.ErrAttemptNotFound
 }
+func (f *fakeSubmitRepo) FindAttemptByIDForUpdate(_ context.Context, id string) (*entity.Attempt, error) {
+	if a, ok := f.attempts[id]; ok {
+		copied := *a // emulate a fresh DB read, not an aliased pointer
+		return &copied, nil
+	}
+	return nil, node_error.ErrAttemptNotFound
+}
 func (f *fakeSubmitRepo) ListAnswersByAttempt(_ context.Context, id string) ([]entity.Answer, error) {
 	return f.answers[id], nil
 }
 func (f *fakeSubmitRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) error {
+	// emulate the real conditional update WHERE status='in_progress': a
+	// finalization write (submitted/auto_submitted/graded) on a row that is
+	// already finalized is a no-op and reports locked, like RowsAffected==0.
+	if a.Status != entity.AttemptInProgress {
+		stored, ok := f.attempts[a.ID]
+		if ok && stored.Status != entity.AttemptInProgress {
+			return node_error.ErrAttemptLocked
+		}
+	}
 	f.attempts[a.ID] = a
 	return nil
 }
@@ -113,6 +129,27 @@ func TestSubmitRejectsExpiredAttempt(t *testing.T) {
 	_, err := svc.SubmitAttempt(context.Background(), "att-1", "part-1")
 	if !errors.Is(err, node_error.ErrAttemptExpired) && !errors.Is(err, node_error.ErrAttemptLocked) {
 		t.Fatalf("want expiry error, got %v", err)
+	}
+}
+
+// TestSubmitManualExamWithoutEssayAnswerRow pins BLOCKER-3: an exam flagged
+// has_manual_items stays manual_required even when the student never saved an
+// answer for the manual item (no answer row exists).
+func TestSubmitManualExamWithoutEssayAnswerRow(t *testing.T) {
+	score10 := 10.0
+	svc, repo := submitFixture()
+	repo.exam.HasManualItems = true
+	// only objective answers persisted — no essay row at all
+	repo.answers["att-1"] = []entity.Answer{{ID: "ans-1", AttemptID: "att-1", ItemID: "item-1", Score: &score10, MaxScore: 10, GradingStatus: entity.GradingAutoGraded}}
+	att, err := svc.SubmitAttempt(context.Background(), "att-1", "part-1")
+	if err != nil {
+		t.Fatalf("SubmitAttempt: %v", err)
+	}
+	if att.GradingStatus != entity.GradingManualRequired {
+		t.Fatalf("exam with manual items must stay manual_required without essay row, got %q", att.GradingStatus)
+	}
+	if att.Score == nil || *att.Score != 10 {
+		t.Fatalf("score = %v, want 10 (objective subtotal)", att.Score)
 	}
 }
 

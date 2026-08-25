@@ -163,29 +163,51 @@ func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participa
 		// the client retries via the sweeper path and gets auto_submitted.
 		return nil, node_error.ErrAttemptExpired
 	}
-	answers, err := s.repo.ListAnswersByAttempt(ctx, attemptID)
+	exam, err := s.repo.FindExam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	total, gradingStatus, _ := sumAnswerScores(answers)
-	now := time.Now().UTC()
-	attempt.Score = &total
-	attempt.GradingStatus = gradingStatus
-	attempt.Status = entity.AttemptSubmitted
-	attempt.SubmittedAt = &now
-	if err := s.txManager.Atomic(ctx, func(txCtx context.Context) error {
-		return s.repo.UpdateAttempt(txCtx, attempt)
-	}); err != nil {
+	var result *entity.Attempt
+	err = s.txManager.Atomic(ctx, func(txCtx context.Context) error {
+		// Lock the row and re-check status so a concurrent sweeper finalize
+		// cannot be overwritten and vice versa.
+		locked, err := s.repo.FindAttemptByIDForUpdate(txCtx, attemptID)
+		if err != nil {
+			return err
+		}
+		if locked.Status != entity.AttemptInProgress {
+			result = locked // lost race: already finalized, idempotent result
+			return nil
+		}
+		answers, err := s.repo.ListAnswersByAttempt(txCtx, attemptID)
+		if err != nil {
+			return err
+		}
+		total, gradingStatus := finalizeStatus(answers, exam.HasManualItems)
+		now := time.Now().UTC()
+		locked.Score = &total
+		locked.GradingStatus = gradingStatus
+		locked.Status = entity.AttemptSubmitted
+		locked.SubmittedAt = &now
+		if err := s.repo.UpdateAttempt(txCtx, locked); err != nil {
+			return err
+		}
+		result = locked
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	return attempt, nil
+	return result, nil
 }
 
-// sumAnswerScores totals the per-answer scores written by autosave and decides
-// graded vs manual_required. The bool reports whether any manual answers exist.
-func sumAnswerScores(answers []entity.Answer) (float64, entity.GradingStatus, bool) {
-	var total float64
-	hasManual := false
+// finalizeStatus totals the per-answer scores written by autosave. The
+// attempt is manual_required when either signal says so: a persisted manual
+// answer row, or the exam-level HasManualItems invariant (student may never
+// have saved an answer for the manual item).
+func finalizeStatus(answers []entity.Answer, hasManualItems bool) (float64, entity.GradingStatus) {
+	total := 0.0
+	hasManual := hasManualItems
 	for _, ans := range answers {
 		if ans.Score != nil {
 			total += *ans.Score
@@ -198,5 +220,5 @@ func sumAnswerScores(answers []entity.Answer) (float64, entity.GradingStatus, bo
 	if hasManual {
 		status = entity.GradingManualRequired
 	}
-	return total, status, hasManual
+	return total, status
 }

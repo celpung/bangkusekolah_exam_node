@@ -24,4 +24,5 @@ type NodeRepository interface {
 	FindItemByID(ctx context.Context, itemID string) (*entity.Item, error)
 	UpdateAttempt(ctx context.Context, attempt *entity.Attempt) error
 	ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error)
+	FindAttemptByIDForUpdate(ctx context.Context, attemptID string) (*entity.Attempt, error)
 }

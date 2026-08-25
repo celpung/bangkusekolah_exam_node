@@ -2,12 +2,14 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
+	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	"gorm.io/gorm"
 )
 
@@ -89,6 +91,43 @@ func TestNodeRepositoryUsesTxFromContext(t *testing.T) {
 	_, _ = (&nodeRepository{db: db}).FindExam(ctx)
 	// dry-run still records the query; the point is GetDB(tx) does not panic and uses tx
 	requireSQLContaining(t, recorded, "SELECT * FROM `exams`")
+}
+
+func TestNodeFindAttemptByIDForUpdateLocksRow(t *testing.T) {
+	db, recorded := newDryRunDB(t)
+	_, _ = (&nodeRepository{db: db}).FindAttemptByIDForUpdate(context.Background(), "att-1")
+	stmt := requireSQLContaining(t, recorded, "SELECT * FROM `attempts`", "WHERE id = ?")
+	if !strings.Contains(stmt.SQL, "FOR UPDATE") && !strings.Contains(stmt.SQL, "FOR SHARE") {
+		t.Fatalf("expected FOR UPDATE locking clause, got: %s", stmt.SQL)
+	}
+}
+
+// TestNodeUpdateAttemptConditionalOnInProgress pins BLOCKER-1: the UPDATE must
+// carry a status='in_progress' guard so submit and sweeper can never overwrite
+// each other's final state.
+func TestNodeUpdateAttemptConditionalOnInProgress(t *testing.T) {
+	db, recorded := newDryRunDB(t)
+	now := time.Now().UTC()
+	err := (&nodeRepository{db: db}).UpdateAttempt(context.Background(), &entity.Attempt{
+		ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", Status: entity.AttemptSubmitted,
+		SubmittedAt: &now, MaxScore: 30,
+	})
+	// Dry-run affects zero rows, so the repository maps it to ErrAttemptLocked —
+	// which itself proves the conditional update path is wired.
+	if !errors.Is(err, node_error.ErrAttemptLocked) {
+		t.Fatalf("dry-run RowsAffected=0 must map to ErrAttemptLocked, got %v", err)
+	}
+	stmt := requireSQLContaining(t, recorded, "UPDATE `attempts` SET", "WHERE id = ? AND status = ?")
+	// the status guard var pins in_progress; it is the last bound var
+	found := false
+	for _, v := range stmt.Vars {
+		if s, ok := v.(string); ok && s == string(entity.AttemptInProgress) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("status guard must pin in_progress, vars: %v", stmt.Vars)
+	}
 }
 
 func TestNodeCreateAttemptUsesTxFromContext(t *testing.T) {

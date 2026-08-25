@@ -173,13 +173,22 @@ func (r *nodeRepository) UpsertAnswer(ctx context.Context, ans *entity.Answer) (
 func (r *nodeRepository) UpdateAttempt(ctx context.Context, a *entity.Attempt) error {
 	db := helper.GetDB(ctx, r.db)
 	m := mapper.ToAttemptModel(a)
-	return db.Model(&model.Attempt{}).Where("id = ?", a.ID).Updates(map[string]interface{}{
+	// Conditional on in_progress: whoever finalizes second is a no-op, so
+	// submit and sweeper can never overwrite each other's final state.
+	res := db.Model(&model.Attempt{}).Where("id = ? AND status = ?", a.ID, string(entity.AttemptInProgress)).Updates(map[string]interface{}{
 		"status":            m.Status,
 		"submitted_at":      m.SubmittedAt,
 		"auto_submitted_at": m.AutoSubmittedAt,
 		"score":             m.Score,
 		"grading_status":    m.GradingStatus,
-	}).Error
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return node_error.ErrAttemptLocked
+	}
+	return nil
 }
 
 func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error) {
@@ -194,6 +203,18 @@ func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time)
 		entities[i] = *mapper.ToAttemptEntity(&models[i])
 	}
 	return entities, nil
+}
+
+func (r *nodeRepository) FindAttemptByIDForUpdate(ctx context.Context, id string) (*entity.Attempt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Attempt
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrAttemptNotFound
+		}
+		return nil, err
+	}
+	return mapper.ToAttemptEntity(&m), nil
 }
 
 // Ensure json import is used for future extensions
