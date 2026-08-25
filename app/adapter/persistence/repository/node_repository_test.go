@@ -110,6 +110,13 @@ func TestNodeUpsertAnswerSingleStatementOnDuplicateKey(t *testing.T) {
 	if !strings.Contains(stmt.SQL, "client_seq") {
 		t.Fatalf("upsert must guard client_seq: %s", stmt.SQL)
 	}
+	// every mutable field must be conditionally guarded so a stale seq cannot
+	// clobber newer content (review Task 14 BLOCKER-1)
+	for _, field := range []string{"answer_json", "answer_text", "score", "grading_status", "last_saved_at"} {
+		if !strings.Contains(stmt.SQL, "IF(VALUES(client_seq) > client_seq, VALUES("+field+")") {
+			t.Fatalf("field %s must be guarded against stale client_seq: %s", field, stmt.SQL)
+		}
+	}
 }
 
 func TestNodeUpsertAnswerUsesTxFromContext(t *testing.T) {

@@ -139,19 +139,21 @@ func (r *nodeRepository) FindItemByID(ctx context.Context, id string) (*entity.I
 func (r *nodeRepository) UpsertAnswer(ctx context.Context, ans *entity.Answer) (*entity.Answer, error) {
 	db := helper.GetDB(ctx, r.db)
 	m := mapper.ToAnswerModel(ans)
-	// Single statement keyed by the unique index (attempt_id, item_id). The
-	// GREATEST guard keeps client_seq monotonic at the SQL level so a delayed
-	// retry can never lower the stored seq; RowsAffected tells insert (2 cols
-	// change on duplicate in MySQL semantics aside, we re-read via returning m).
+	// Single statement keyed by the unique index (attempt_id, item_id). Every
+	// mutable field is guarded by an IF so a stale client_seq can never change
+	// stored content; client_seq itself stays monotonic via GREATEST. MySQL's
+	// affected-rows contract for ON DUPLICATE KEY UPDATE (insert=1,
+	// update-with-change=2, update-without-change=0) gives a reliable stale
+	// signal: zero rows affected means the incoming write was dropped.
 	res := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "attempt_id"}, {Name: "item_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"answer_json":    m.AnswerJSON,
-			"answer_text":    m.AnswerText,
-			"score":          m.Score,
-			"max_score":      m.MaxScore,
-			"grading_status": m.GradingStatus,
-			"last_saved_at":  m.LastSavedAt,
+			"answer_json":    gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(answer_json), answer_json)"),
+			"answer_text":    gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(answer_text), answer_text)"),
+			"score":          gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(score), score)"),
+			"max_score":      gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(max_score), max_score)"),
+			"grading_status": gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(grading_status), grading_status)"),
+			"last_saved_at":  gorm.Expr("IF(VALUES(client_seq) > client_seq, VALUES(last_saved_at), last_saved_at)"),
 			"client_seq":     gorm.Expr("GREATEST(client_seq, VALUES(client_seq))"),
 		}),
 	}).Create(m)
@@ -160,6 +162,9 @@ func (r *nodeRepository) UpsertAnswer(ctx context.Context, ans *entity.Answer) (
 			return nil, node_error.ErrStaleAnswerWrite
 		}
 		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, node_error.ErrStaleAnswerWrite
 	}
 	return mapper.ToAnswerEntity(m), nil
 }
