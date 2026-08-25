@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "single_choice correct, case and space insensitive",
+      "question_type": "single_choice",
+      "points": 10,
+      "answer_key": { "answer": "A" },
+      "answer": { "answer": " a " },
+      "want_score": 10,
+      "want_graded": true
+    },
+    {
+      "name": "single_choice wrong",
+      "question_type": "single_choice",
+      "points": 10,
+      "answer_key": { "answer": "A" },
+      "answer": { "answer": "B" },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "true_false correct",
+      "question_type": "true_false",
+      "points": 4,
+      "answer_key": { "answer": true },
+      "answer": { "answer": true },
+      "want_score": 4,
+      "want_graded": true
+    },
+    {
+      "name": "true_false wrong",
+      "question_type": "true_false",
+      "points": 4,
+      "answer_key": { "answer": true },
+      "answer": { "answer": false },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "short_answer matches the primary key after trimming",
+      "question_type": "short_answer",
+      "points": 6,
+      "answer_key": { "answer": " Jakarta " },
+      "answer": { "answer": "jakarta" },
+      "want_score": 6,
+      "want_graded": true
+    },
+    {
+      "name": "short_answer matches an accepted alternative",
+      "question_type": "short_answer",
+      "points": 6,
+      "answer_key": { "answer": "Jakarta", "accepted_answers": ["DKI Jakarta", "Jakarta Raya"] },
+      "answer": { "answer": "dki jakarta" },
+      "want_score": 6,
+      "want_graded": true
+    },
+    {
+      "name": "short_answer matches nothing",
+      "question_type": "short_answer",
+      "points": 6,
+      "answer_key": { "answer": "Jakarta", "accepted_answers": ["DKI Jakarta"] },
+      "answer": { "answer": "Bandung" },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "multiple_choice is order independent",
+      "question_type": "multiple_choice",
+      "points": 12,
+      "answer_key": { "answers": ["A", "C"] },
+      "answer": { "answers": ["c", "a"] },
+      "want_score": 12,
+      "want_graded": true
+    },
+    {
+      "name": "multiple_choice with a missing selection scores zero",
+      "question_type": "multiple_choice",
+      "points": 12,
+      "answer_key": { "answers": ["A", "C"] },
+      "answer": { "answers": ["a"] },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "ordering correct",
+      "question_type": "ordering",
+      "points": 8,
+      "answer_key": { "order": ["1", "2", "3"] },
+      "answer": { "order": ["1", "2", "3"] },
+      "want_score": 8,
+      "want_graded": true
+    },
+    {
+      "name": "ordering is order sensitive",
+      "question_type": "ordering",
+      "points": 8,
+      "answer_key": { "order": ["1", "2", "3"] },
+      "answer": { "order": ["1", "3", "2"] },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "matching correct, keys and values normalized",
+      "question_type": "matching",
+      "points": 9,
+      "answer_key": { "pairs": { "a": "1", "b": "2" } },
+      "answer": { "pairs": { "A": "1", "B": "2" } },
+      "want_score": 9,
+      "want_graded": true
+    },
+    {
+      "name": "matching with one wrong pair",
+      "question_type": "matching",
+      "points": 9,
+      "answer_key": { "pairs": { "a": "1", "b": "2" } },
+      "answer": { "pairs": { "a": "1", "b": "3" } },
+      "want_score": 0,
+      "want_graded": true
+    },
+    {
+      "name": "essay is never auto graded",
+      "question_type": "essay",
+      "points": 20,
+      "answer_key": {},
+      "answer": { "answer": "a long essay" },
+      "want_score": 0,
+      "want_graded": false
+    },
+    {
+      "name": "file_upload is never auto graded",
+      "question_type": "file_upload",
+      "points": 15,
+      "answer_key": {},
+      "answer": {},
+      "want_score": 0,
+      "want_graded": false
+    }
+  ]
+}
