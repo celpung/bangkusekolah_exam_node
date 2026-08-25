@@ -49,6 +49,18 @@ func (f *fakeSubmitRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) err
 }
 func (f *fakeSubmitRepo) FindExam(_ context.Context) (*entity.Exam, error) { return f.exam, nil }
 
+// ListExpiredAttempts mirrors the sweeper's query so the race test can hand
+// the sweeper a stale expired list without hitting the nil embedded interface.
+func (f *fakeSubmitRepo) ListExpiredAttempts(_ context.Context, now time.Time) ([]entity.Attempt, error) {
+	var out []entity.Attempt
+	for _, a := range f.attempts {
+		if a.Status == entity.AttemptInProgress && a.DueAt.Before(now) {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
+}
+
 func submitFixture() (*AttemptService, *fakeSubmitRepo) {
 	score10 := 10.0
 	exam := &entity.Exam{ID: "exam-1", MaxScore: 30, HasManualItems: false}

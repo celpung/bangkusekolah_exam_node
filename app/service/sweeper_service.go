@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
+	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 )
@@ -56,6 +57,11 @@ func (s *SweeperService) SweepExpiredAttempts(ctx context.Context) (int, error) 
 	failed := 0
 	for _, attempt := range expired {
 		if err := s.finalizeOne(ctx, exam.HasManualItems, attempt); err != nil {
+			// A concurrent submit already finalized this attempt — a safe,
+			// idempotent race, not a failure. Skip it without an error.
+			if errors.Is(err, node_error.ErrAttemptLocked) {
+				continue
+			}
 			slog.WarnContext(ctx, "sweeper: attempt not finalized", "attempt_id", attempt.ID, "error", err)
 			failed++
 			if firstFailure == nil {

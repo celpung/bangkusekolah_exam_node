@@ -136,9 +136,9 @@ func TestSweeperReturnsErrorWhenFinalizeFails(t *testing.T) {
 	}
 }
 
-// TestSubmitVsSweeperLostRaceIsIdempotent pins BLOCKER-1 at service level:
-// whichever finalizer loses the race sees the already-finalized attempt and
-// returns it unchanged instead of overwriting.
+// TestSubmitVsSweeperLostRaceIsIdempotent pins the benign race: submit wins,
+// the sweeper's stale finalize hits ErrAttemptLocked, and SweepExpiredAttempts
+// treats it as a successful no-op — no SweepError, status stays submitted.
 func TestSubmitVsSweeperLostRaceIsIdempotent(t *testing.T) {
 	subSvc, subRepo := submitFixture()
 	sweeper := &SweeperService{repo: subRepo, txManager: stubNodeTx{}}
@@ -152,12 +152,21 @@ func TestSubmitVsSweeperLostRaceIsIdempotent(t *testing.T) {
 	if submitted.Status != entity.AttemptSubmitted {
 		t.Fatalf("expected submitted, got %q", submitted.Status)
 	}
-	// sweeper's expired list was computed before the submit; finalizeOne hits
-	// the conditional update and must not flip the status to auto_submitted.
-	stale := *submitted
-	stale.Status = entity.AttemptInProgress // what the sweeper read pre-submit
-	if err := sweeper.finalizeOne(context.Background(), subRepo.exam.HasManualItems, stale); err == nil {
-		t.Fatalf("conditional update must reject overwrite of finalized attempt")
+
+	// simulate the sweeper's stale expired list: it still holds the attempt as
+	// in_progress because the list was computed before the submit landed
+	subRepo.attempts["att-stale"] = &entity.Attempt{
+		ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1",
+		Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 30,
+	}
+	subRepo.answers["att-1"] = []entity.Answer{}
+
+	n, err := sweeper.SweepExpiredAttempts(context.Background())
+	if err != nil {
+		t.Fatalf("benign race must not surface a sweep failure, got %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("swept = %d, want 0 (attempt already finalized by submit)", n)
 	}
 	final := subRepo.attempts["att-1"]
 	if final.Status != entity.AttemptSubmitted {
