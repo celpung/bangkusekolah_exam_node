@@ -1,0 +1,22 @@
+services:
+  mysql:
+    image: mysql:8.0
+    command: --max-connections=200
+    ports:
+      - "127.0.0.1:3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: examnode
+      MYSQL_USER: examnode
+      MYSQL_PASSWORD: examnode
+    volumes:
+      - mysql_data:/var/lib/mysql
+  examnode:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: .env
+    depends_on:
+      - mysql
+volumes:
+  mysql_data:
