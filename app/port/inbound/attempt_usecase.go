@@ -21,4 +21,5 @@ type AttemptUsecase interface {
 	// stored one.
 	AutosaveAnswer(ctx context.Context, attemptID, itemID string, answerJSON map[string]interface{}, answerText *string, clientSeq int64, participantID string) (*entity.Answer, error)
 	SubmitAttempt(ctx context.Context, attemptID, participantID string) (*entity.Attempt, error)
+	GetResult(ctx context.Context, participantID, examID string) (*entity.Attempt, error)
 }

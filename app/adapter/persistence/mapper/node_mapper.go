@@ -66,6 +66,32 @@ func ToAnswerModel(e *entity.Answer) *model.Answer {
 	return &model.Answer{ID: e.ID, AttemptID: e.AttemptID, ItemID: e.ItemID, AnswerJSON: aj, AnswerText: e.AnswerText, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), LastSavedAt: e.LastSavedAt, ClientSeq: e.ClientSeq}
 }
 
+func ToIntegrityEventEntity(m *model.IntegrityEvent) *entity.IntegrityEvent {
+	if m == nil {
+		return nil
+	}
+	var meta map[string]interface{}
+	if m.MetadataJSON != nil {
+		_ = json.Unmarshal([]byte(*m.MetadataJSON), &meta)
+	}
+	var desc *string
+	return &entity.IntegrityEvent{ID: m.ID, AttemptID: m.AttemptID, StudentID: m.StudentID, EventType: m.EventType, Description: desc, MetadataJSON: meta, CreatedAt: m.CreatedAt}
+}
+
+func ToIntegrityEventModel(e *entity.IntegrityEvent) *model.IntegrityEvent {
+	if e == nil {
+		return nil
+	}
+	var meta *string
+	if e.MetadataJSON != nil {
+		if b, err := json.Marshal(e.MetadataJSON); err == nil {
+			s := string(b)
+			meta = &s
+		}
+	}
+	return &model.IntegrityEvent{ID: e.ID, AttemptID: e.AttemptID, StudentID: e.StudentID, EventType: e.EventType, Description: e.Description, MetadataJSON: meta, CreatedAt: e.CreatedAt}
+}
+
 func ToItemEntity(m *model.Item) *entity.Item {
 	if m == nil {
 		return nil

@@ -222,3 +222,14 @@ func finalizeStatus(answers []entity.Answer, hasManualItems bool) (float64, enti
 	}
 	return total, status
 }
+
+func (s *AttemptService) GetResult(ctx context.Context, participantID, _ string) (*entity.Attempt, error) {
+	attempt, err := s.repo.FindLatestAttemptByParticipant(ctx, participantID)
+	if err != nil {
+		return nil, err
+	}
+	if !attempt.IsFinished() {
+		return nil, node_error.ErrResultNotAvailable
+	}
+	return attempt, nil
+}

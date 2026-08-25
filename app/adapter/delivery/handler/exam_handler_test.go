@@ -59,6 +59,9 @@ func (f *fakeAttemptUC) AutosaveAnswer(_ context.Context, _, _ string, _ map[str
 func (f *fakeAttemptUC) SubmitAttempt(_ context.Context, _, _ string) (*entity.Attempt, error) {
 	return nil, nil
 }
+func (f *fakeAttemptUC) GetResult(_ context.Context, _, _ string) (*entity.Attempt, error) {
+	return nil, nil
+}
 
 // stubAuth stands in for the Task 16 JWT middleware: it injects a fixed
 // participant id and exam id so these tests never need a real token or DB.
@@ -76,7 +79,7 @@ func newContentRouter(contentUC inbound.ContentUsecase, attemptUC inbound.Attemp
 	r := chi.NewRouter()
 	r.Use(stubAuth("part-1", "exam-a"))
 	r.Get("/api/v1/student/exams/{examId}/content", NewExamHandler(contentUC).GetContent)
-	r.Get("/api/v1/student/exam-attempts/{attemptId}", NewAttemptHandler(attemptUC).GetState)
+	r.Get("/api/v1/student/exam-attempts/{attemptId}", NewAttemptHandler(attemptUC, &fakeIntegrityUC{}).GetState)
 	return r
 }
 

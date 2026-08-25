@@ -1,19 +1,26 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/dto"
 	delivery_helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/helper"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/middleware"
+	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 )
 
-type AttemptHandler struct{ attemptUC inbound.AttemptUsecase }
+type AttemptHandler struct {
+	attemptUC   inbound.AttemptUsecase
+	integrityUC inbound.IntegrityUsecase
+}
 
-func NewAttemptHandler(uc inbound.AttemptUsecase) *AttemptHandler {
-	return &AttemptHandler{attemptUC: uc}
+func NewAttemptHandler(uc inbound.AttemptUsecase, integrityUC inbound.IntegrityUsecase) *AttemptHandler {
+	return &AttemptHandler{attemptUC: uc, integrityUC: integrityUC}
 }
 
 // GetState returns the caller's attempt with answers and server_time. The
@@ -28,4 +35,76 @@ func (h *AttemptHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delivery_helper.Success(w, http.StatusOK, "attempt retrieved", state)
+}
+
+// Autosave writes one answer. A stale client_seq is a 200 no-op — the client
+// already holds newer content, and a 409 would invite retrying the stale
+// payload, which is exactly what the sequence number prevents.
+func (h *AttemptHandler) Autosave(w http.ResponseWriter, r *http.Request) {
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
+	attemptID := chi.URLParam(r, "attemptId")
+	itemID := chi.URLParam(r, "itemId")
+	var req dto.AutosaveRequest
+	if !delivery_helper.DecodeJSON(w, r, &req) {
+		return
+	}
+	ans, err := h.attemptUC.AutosaveAnswer(r.Context(), attemptID, itemID, req.AnswerJSON, req.AnswerText, req.ClientSeq, pid)
+	if err != nil {
+		if errors.Is(err, node_error.ErrStaleAnswerWrite) {
+			delivery_helper.Success(w, http.StatusOK, "answer already up to date", map[string]interface{}{"last_saved_at": time.Now().UTC()})
+			return
+		}
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	delivery_helper.Success(w, http.StatusOK, "answer saved", map[string]interface{}{"last_saved_at": ans.LastSavedAt})
+}
+
+func (h *AttemptHandler) Submit(w http.ResponseWriter, r *http.Request) {
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
+	attemptID := chi.URLParam(r, "attemptId")
+	att, err := h.attemptUC.SubmitAttempt(r.Context(), attemptID, pid)
+	if err != nil {
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	delivery_helper.Success(w, http.StatusOK, "attempt submitted", map[string]interface{}{
+		"grading_status": string(att.GradingStatus), "score": att.Score, "max_score": att.MaxScore,
+	})
+}
+
+// GetResult serves the participant's latest finished attempt. Mixed exams
+// return manual_required with the auto-graded subtotal (decision 10).
+func (h *AttemptHandler) GetResult(w http.ResponseWriter, r *http.Request) {
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
+	examID := chi.URLParam(r, "examId")
+	att, err := h.attemptUC.GetResult(r.Context(), pid, examID)
+	if err != nil {
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	resp := dto.ResultResponse{
+		AttemptID: att.ID, Status: string(att.Status), Score: att.Score,
+		MaxScore: att.MaxScore, GradingStatus: string(att.GradingStatus),
+	}
+	delivery_helper.Success(w, http.StatusOK, "result retrieved", resp)
+}
+
+func (h *AttemptHandler) RecordIntegrity(w http.ResponseWriter, r *http.Request) {
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
+	attemptID := chi.URLParam(r, "attemptId")
+	var req dto.IntegrityEventRequest
+	if !delivery_helper.DecodeJSON(w, r, &req) {
+		return
+	}
+	ev, err := h.integrityUC.RecordEvent(r.Context(), attemptID, pid, req.EventType, req.Description, req.Metadata)
+	if err != nil {
+		if errors.Is(err, node_error.ErrIntegrityFlood) {
+			delivery_helper.Error(w, http.StatusTooManyRequests, "too many integrity events")
+			return
+		}
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	delivery_helper.Success(w, http.StatusOK, "integrity event recorded", ev)
 }

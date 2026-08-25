@@ -20,6 +20,16 @@ func Success(w http.ResponseWriter, status int, message string, data interface{}
 	WriteJSON(w, status, map[string]interface{}{"message": message, "data": data})
 }
 
+// DecodeJSON parses the request body into dst. On failure it has already
+// written the error response; the caller just stops.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return false
+	}
+	return true
+}
+
 func Error(w http.ResponseWriter, status int, message string) {
 	WriteJSON(w, status, map[string]interface{}{"error": message})
 }

@@ -261,6 +261,52 @@ func (r *nodeRepository) listItemsWhere(ctx context.Context, where string, args 
 	return entities, nil
 }
 
+func (r *nodeRepository) FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Attempt
+	if err := db.Where("participant_id = ?", participantID).Order("attempt_no DESC").First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("find latest attempt: %w", err)
+	}
+	return mapper.ToAttemptEntity(&m), nil
+}
+
+func (r *nodeRepository) CreateIntegrityEvent(ctx context.Context, e *entity.IntegrityEvent) error {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToIntegrityEventModel(e)
+	if err := db.Create(m).Error; err != nil {
+		return fmt.Errorf("create integrity event: %w", err)
+	}
+	e.ID = m.ID
+	return nil
+}
+
+func (r *nodeRepository) CountIntegrityEventsSince(ctx context.Context, attemptID string, since time.Time) (int64, error) {
+	db := helper.GetDB(ctx, r.db)
+	var count int64
+	// idx_integrity_attempt (attempt_id, event_type, created_at) serves this scan.
+	if err := db.Model(&model.IntegrityEvent{}).Where("attempt_id = ? AND created_at >= ?", attemptID, since).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count integrity events: %w", err)
+	}
+	return count, nil
+}
+
+func (r *nodeRepository) FindIntegrityEventSince(ctx context.Context, attemptID, eventType string, since time.Time) (*entity.IntegrityEvent, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.IntegrityEvent
+	err := db.Where("attempt_id = ? AND event_type = ? AND created_at >= ?", attemptID, eventType, since).
+		Order("created_at DESC").First(&m).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("find integrity event: %w", err)
+	}
+	return mapper.ToIntegrityEventEntity(&m), nil
+}
+
 func (r *nodeRepository) FindAttemptByIDForUpdate(ctx context.Context, id string) (*entity.Attempt, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Attempt

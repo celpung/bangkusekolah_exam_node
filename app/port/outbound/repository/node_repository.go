@@ -29,4 +29,8 @@ type NodeRepository interface {
 	ListItemsByExam(ctx context.Context) ([]entity.Item, error)
 	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
 	ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error)
+	FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error)
+	CreateIntegrityEvent(ctx context.Context, event *entity.IntegrityEvent) error
+	CountIntegrityEventsSince(ctx context.Context, attemptID string, since time.Time) (int64, error)
+	FindIntegrityEventSince(ctx context.Context, attemptID, eventType string, since time.Time) (*entity.IntegrityEvent, error)
 }

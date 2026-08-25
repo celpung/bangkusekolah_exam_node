@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
-	node_middleware "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/middleware"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/provider"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
@@ -40,6 +39,7 @@ func main() {
 	issuer := node_security.NewJWTIssuer(cfg)
 	contentSvc := service.NewContentService(repo)
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
+	integritySvc := service.NewIntegrityService(repo, idGen)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)
@@ -63,8 +63,7 @@ func main() {
 	})
 
 	// Student sitting flow: JWT auth + cached content + attempt state.
-	r.Mount("/api/v1/student", router.NewStudentRouter(issuer, contentSvc, attemptSvc))
-	_ = node_middleware.ParticipantIDFromContext // referenced so the import stays meaningful
+	r.Mount("/api/v1/student", router.NewStudentRouter(issuer, contentSvc, attemptSvc, integritySvc))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
