@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/mapper"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/model"
@@ -167,6 +168,32 @@ func (r *nodeRepository) UpsertAnswer(ctx context.Context, ans *entity.Answer) (
 		return nil, node_error.ErrStaleAnswerWrite
 	}
 	return mapper.ToAnswerEntity(m), nil
+}
+
+func (r *nodeRepository) UpdateAttempt(ctx context.Context, a *entity.Attempt) error {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToAttemptModel(a)
+	return db.Model(&model.Attempt{}).Where("id = ?", a.ID).Updates(map[string]interface{}{
+		"status":            m.Status,
+		"submitted_at":      m.SubmittedAt,
+		"auto_submitted_at": m.AutoSubmittedAt,
+		"score":             m.Score,
+		"grading_status":    m.GradingStatus,
+	}).Error
+}
+
+func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Attempt
+	// idx_attempts_sweep (status, due_at) makes this a range scan.
+	if err := db.Where("status = ? AND due_at < ?", string(entity.AttemptInProgress), now).Find(&models).Error; err != nil {
+		return nil, err
+	}
+	entities := make([]entity.Attempt, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToAttemptEntity(&models[i])
+	}
+	return entities, nil
 }
 
 // Ensure json import is used for future extensions

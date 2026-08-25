@@ -20,4 +20,5 @@ type AttemptUsecase interface {
 	// on the client; the server drops any write whose seq is not greater than the
 	// stored one.
 	AutosaveAnswer(ctx context.Context, attemptID, itemID string, answerJSON map[string]interface{}, answerText *string, clientSeq int64, participantID string) (*entity.Answer, error)
+	SubmitAttempt(ctx context.Context, attemptID, participantID string) (*entity.Attempt, error)
 }

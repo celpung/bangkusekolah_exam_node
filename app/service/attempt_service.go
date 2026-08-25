@@ -143,3 +143,60 @@ func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID s
 	}
 	return s.repo.UpsertAnswer(ctx, answer)
 }
+
+func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participantID string) (*entity.Attempt, error) {
+	attempt, err := s.repo.FindAttemptByID(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	if attempt.ParticipantID != participantID {
+		return nil, node_error.ErrForbidden
+	}
+	if attempt.Status == entity.AttemptSubmitted || attempt.Status == entity.AttemptAutoSubmitted || attempt.Status == entity.AttemptGraded {
+		return attempt, nil // idempotent
+	}
+	if attempt.Status != entity.AttemptInProgress {
+		return nil, node_error.ErrAttemptLocked
+	}
+	if time.Now().After(attempt.DueAt) {
+		// Let the sweeper own expiry; a direct submit past due is rejected so
+		// the client retries via the sweeper path and gets auto_submitted.
+		return nil, node_error.ErrAttemptExpired
+	}
+	answers, err := s.repo.ListAnswersByAttempt(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	total, gradingStatus, _ := sumAnswerScores(answers)
+	now := time.Now().UTC()
+	attempt.Score = &total
+	attempt.GradingStatus = gradingStatus
+	attempt.Status = entity.AttemptSubmitted
+	attempt.SubmittedAt = &now
+	if err := s.txManager.Atomic(ctx, func(txCtx context.Context) error {
+		return s.repo.UpdateAttempt(txCtx, attempt)
+	}); err != nil {
+		return nil, err
+	}
+	return attempt, nil
+}
+
+// sumAnswerScores totals the per-answer scores written by autosave and decides
+// graded vs manual_required. The bool reports whether any manual answers exist.
+func sumAnswerScores(answers []entity.Answer) (float64, entity.GradingStatus, bool) {
+	var total float64
+	hasManual := false
+	for _, ans := range answers {
+		if ans.Score != nil {
+			total += *ans.Score
+		}
+		if ans.GradingStatus == entity.GradingManualRequired {
+			hasManual = true
+		}
+	}
+	status := entity.GradingAutoGraded
+	if hasManual {
+		status = entity.GradingManualRequired
+	}
+	return total, status, hasManual
+}

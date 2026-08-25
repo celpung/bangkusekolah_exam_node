@@ -2,6 +2,7 @@ package outbound_repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 )
@@ -21,4 +22,6 @@ type NodeRepository interface {
 	// client_seq is >= the incoming one.
 	UpsertAnswer(ctx context.Context, answer *entity.Answer) (*entity.Answer, error)
 	FindItemByID(ctx context.Context, itemID string) (*entity.Item, error)
+	UpdateAttempt(ctx context.Context, attempt *entity.Attempt) error
+	ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error)
 }
