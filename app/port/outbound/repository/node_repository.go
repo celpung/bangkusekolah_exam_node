@@ -39,4 +39,10 @@ type NodeRepository interface {
 	ReplaceBundle(ctx context.Context, exam *entity.Exam, items []entity.Item, participants []entity.Participant) error
 	ListParticipants(ctx context.Context) ([]entity.Participant, error)
 	ListParticipantsByExam(ctx context.Context, examID string) ([]entity.Participant, error)
+
+	// Harvest cursor operations (Task 20).
+	ListUnpushedAttempts(ctx context.Context) ([]entity.Attempt, error)
+	MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) error
+	LogHarvestFailure(ctx context.Context, attemptID string, errMsg string) error
+	ListIntegrityEventsByAttempt(ctx context.Context, attemptID string) ([]entity.IntegrityEvent, error)
 }

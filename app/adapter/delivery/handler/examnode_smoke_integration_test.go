@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	gormmysql "gorm.io/driver/mysql"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
+	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 

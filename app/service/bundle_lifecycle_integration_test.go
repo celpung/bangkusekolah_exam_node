@@ -130,4 +130,4 @@ func (f *lifecycleContentSvc) RebuildExam(_ context.Context, examID string, _ ..
 }
 func (f *lifecycleContentSvc) BeginRebuild(string) uint64        { return 0 }
 func (f *lifecycleContentSvc) CancelRebuild(string, uint64) bool { return false }
-func (f *lifecycleContentSvc) LockExam(string) func()        { return func() {} }
+func (f *lifecycleContentSvc) LockExam(string) func()            { return func() {} }

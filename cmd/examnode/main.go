@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
+	nodecentral "github.com/celpung/bangkusekolah_exam_node/app/adapter/central"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/handler"
 	node_router "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/provider"
@@ -47,6 +48,9 @@ func main() {
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
 	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
 	bundleSvc := service.NewBundleService(repo, txManager, contentSvc)
+	harvestClient := nodecentral.NewHarvestClient(cfg)
+	harvestSvc := service.NewHarvestService(repo, harvestClient)
+	sweeperSvc := service.NewSweeperService(repo, txManager)
 
 	// Rehydrate the in-memory content cache from the persisted bundles
 	// BEFORE accepting traffic — a restart must not break the sitting flow.
@@ -63,6 +67,7 @@ func main() {
 	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
 	internalH := handler.NewInternalHandler(bundleSvc)
+	harvestH := handler.NewHarvestHandler(harvestSvc)
 	readiness := node_router.NewReadinessRouter(contentSvc,
 		func() ([]string, error) {
 			exams, err := repo.ListExams(context.Background())
@@ -76,7 +81,12 @@ func main() {
 			return ids, nil
 		},
 		sqlDB.Ping)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
+	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
+
+	// Background workers: sweeper drains expired attempts each tick; harvest
+	// pushes finished work to central every cfg.HarvestInterval (default 5m).
+	go sweeperSvc.Start(context.Background(), cfg.SweepInterval)
+	go harvestSvc.Start(context.Background(), cfg.HarvestInterval)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,

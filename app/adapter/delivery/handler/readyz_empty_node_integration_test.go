@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	gormmysql "gorm.io/driver/mysql"
 	"github.com/go-chi/chi/v5"
+	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/handler"
+	node_router "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
-	node_router "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
-	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/handler"
 	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
@@ -47,6 +47,7 @@ func TestIntegration_ReadyzEmptyNodeFailsClosed(t *testing.T) {
 
 	cfg := &config.Config{JWTSecret: "integration-jwt-secret-32-characters!", JWTTTL: 90 * time.Minute}
 	internalH := handler.NewInternalHandler(bundleSvc)
+	harvestH := handler.NewHarvestHandler(service.NewHarvestService(repo, testPusherOK{}))
 	attemptSvc := service.NewAttemptService(repo, txManager, &readinessIDGen{})
 	integritySvc := service.NewIntegrityService(repo, txManager, &readinessIDGen{})
 
@@ -64,7 +65,7 @@ func TestIntegration_ReadyzEmptyNodeFailsClosed(t *testing.T) {
 			return ids, nil
 		},
 		func() error { return db.Error })
-	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
+	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
 
 	getReadyz := func() int {
 		w := httptest.NewRecorder()

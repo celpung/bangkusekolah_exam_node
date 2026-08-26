@@ -295,6 +295,55 @@ func (r *nodeRepository) ListParticipantsByExam(ctx context.Context, examID stri
 	return entities, nil
 }
 
+func (r *nodeRepository) ListUnpushedAttempts(ctx context.Context) ([]entity.Attempt, error) {
+	// idx_attempts_harvest (status, harvested_at) makes this a covering scan.
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Attempt
+	if err := db.Where("status IN (?,?) AND harvested_at IS NULL",
+		string(entity.AttemptSubmitted), string(entity.AttemptAutoSubmitted)).
+		Order("submitted_at ASC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list unpushed attempts: %w", err)
+	}
+	entities := make([]entity.Attempt, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToAttemptEntity(&models[i])
+	}
+	return entities, nil
+}
+
+func (r *nodeRepository) MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	db := helper.GetDB(ctx, r.db)
+	if err := db.Model(&model.Attempt{}).Where("id IN ?", ids).Update("harvested_at", at).Error; err != nil {
+		return fmt.Errorf("mark attempts harvested: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeRepository) LogHarvestFailure(ctx context.Context, attemptID, errMsg string) error {
+	db := helper.GetDB(ctx, r.db)
+	msg := errMsg
+	if err := db.Create(&model.HarvestLog{AttemptID: attemptID, PushedAt: time.Now().UTC(), LastError: &msg}).Error; err != nil {
+		return fmt.Errorf("log harvest failure: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeRepository) ListIntegrityEventsByAttempt(ctx context.Context, attemptID string) ([]entity.IntegrityEvent, error) {
+	db := helper.GetDB(ctx, r.db)
+	var models []model.IntegrityEvent
+	if err := db.Where("attempt_id = ?", attemptID).Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list integrity events: %w", err)
+	}
+	entities := make([]entity.IntegrityEvent, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToIntegrityEventEntity(&models[i])
+	}
+	return entities, nil
+}
+
 // ReplaceBundle swaps one exam's bundle: delete the exam's old rows, then
 // bulk-insert the new set. BundleService wraps this in txManager.Atomic.
 // Participants are reconciled by ID: existing rows are updated, missing ones

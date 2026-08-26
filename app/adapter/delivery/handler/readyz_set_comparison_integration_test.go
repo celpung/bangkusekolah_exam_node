@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	gormmysql "gorm.io/driver/mysql"
 	"github.com/go-chi/chi/v5"
+	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 

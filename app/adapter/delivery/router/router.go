@@ -21,6 +21,7 @@ func NewRouter(
 	attemptUC inbound.AttemptUsecase,
 	integrityUC inbound.IntegrityUsecase,
 	internalHandler *handler.InternalHandler,
+	harvestHandler *handler.HarvestHandler,
 	readiness http.Handler,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -42,7 +43,7 @@ func NewRouter(
 	r.Route("/internal/v1", func(r chi.Router) {
 		r.Use(node_middleware.NodeTokenAuth(nodeToken))
 		r.Post("/bundle", internalHandler.PushBundle)
-		// Task 20: r.Post("/harvest/force", harvestHandler.Force)
+		r.Post("/harvest/force", harvestHandler.Force)
 	})
 
 	return r

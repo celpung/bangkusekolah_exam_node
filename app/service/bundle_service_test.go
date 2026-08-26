@@ -99,7 +99,7 @@ func (f *fakeContentSvc) RebuildExam(_ context.Context, _ string, _ ...uint64) e
 }
 func (f *fakeContentSvc) BeginRebuild(string) uint64        { return 0 }
 func (f *fakeContentSvc) CancelRebuild(string, uint64) bool { return false }
-func (f *fakeContentSvc) LockExam(string) func()          { return func() {} }
+func (f *fakeContentSvc) LockExam(string) func()            { return func() {} }
 
 func fakeBundle() inbound.ExamNodeBundle {
 	now := time.Now()
