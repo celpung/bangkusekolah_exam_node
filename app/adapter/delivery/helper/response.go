@@ -48,6 +48,8 @@ func HandleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, node_error.ErrTooManyAttempts),
 		errors.Is(err, node_error.ErrIntegrityFlood):
 		Error(w, http.StatusTooManyRequests, "too many requests")
+	case errors.Is(err, node_error.ErrExamContentNotReady):
+		Error(w, http.StatusServiceUnavailable, "exam content is not ready")
 	case errors.Is(err, node_error.ErrExamNotLoaded),
 		errors.Is(err, node_error.ErrExamNotOpen),
 		errors.Is(err, node_error.ErrMaxAttemptsReached),

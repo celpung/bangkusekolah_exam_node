@@ -8,6 +8,7 @@ var (
 	ErrInvalidAccessCode     = errors.New("access code is not valid")
 	ErrTooManyAttempts       = errors.New("too many login attempts, please wait")
 	ErrExamNotLoaded         = errors.New("no exam bundle has been loaded on this node")
+	ErrExamContentNotReady   = errors.New("exam content is not ready")
 	ErrExamNotOpen           = errors.New("exam is not open for attempts")
 	ErrMaxAttemptsReached    = errors.New("maximum exam attempts reached")
 	ErrAttemptNotFound       = errors.New("exam attempt not found")

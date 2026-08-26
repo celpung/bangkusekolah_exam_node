@@ -51,8 +51,10 @@ func main() {
 
 	// Rehydrate the in-memory content cache from the persisted bundles
 	// BEFORE accepting traffic — a restart must not break the sitting flow.
-	// Any rebuild failure aborts startup.
-	service.RehydrateAllCaches(context.Background(), repo, contentSvc)
+	// Any rebuild failure aborts startup (the executable's decision).
+	if err := service.RehydrateAllCaches(context.Background(), repo, contentSvc); err != nil {
+		log.Fatalf("startup cache rehydrate: %v", err)
+	}
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)

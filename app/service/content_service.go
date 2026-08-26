@@ -116,9 +116,14 @@ func (s *ContentService) UnreadyExams() map[string]error {
 
 // GetExamContent returns the cached content for exactly the requested exam.
 // A mismatched or unbuilt exam is an error — never another exam's content.
+// An exam whose latest rebuild failed is refused with ErrExamContentNotReady:
+// stale cache must never be served while the DB holds newer rows.
 func (s *ContentService) GetExamContent(_ context.Context, examID string) (*inbound.ExamContent, string, []byte, []byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if cause, bad := s.unready[examID]; bad {
+		return nil, "", nil, nil, fmt.Errorf("%w: %v", node_error.ErrExamContentNotReady, cause)
+	}
 	cached, ok := s.cache[examID]
 	if !ok {
 		return nil, "", nil, nil, node_error.ErrExamNotLoaded
