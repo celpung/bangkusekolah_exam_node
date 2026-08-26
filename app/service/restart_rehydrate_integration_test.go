@@ -61,7 +61,9 @@ func TestIntegration_RestartRehydratesCache(t *testing.T) {
 	}
 
 	// Startup rehydrate path — the REAL function cmd/examnode calls.
-	RehydrateAllCaches(context.Background(), repo, restartedContentSvc)
+	if err := RehydrateAllCaches(context.Background(), repo, restartedContentSvc); err != nil {
+		t.Fatalf("rehydrate: %v", err)
+	}
 
 	content, etag, gzipped, raw, err := restartedContentSvc.GetExamContent(context.Background(), "exam-restart")
 	if err != nil {

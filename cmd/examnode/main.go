@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -63,34 +62,9 @@ func main() {
 	// Compress middleware would re-wrap it, so it stays off.
 	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
-	r.Get("/livez", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-	})
-	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := sqlDB.Ping(); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unready", "error": err.Error()})
-			return
-		}
-		// Per-exam cache readiness: a live bundle push whose post-commit
-		// rebuild failed leaves the exam unready until a retry succeeds.
-		unready := contentSvc.UnreadyExams()
-		if len(unready) > 0 {
-			causes := make(map[string]string, len(unready))
-			for id, cause := range unready {
-				causes[id] = cause.Error()
-			}
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "unready", "unready_exams": causes})
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-	})
-
 	internalH := handler.NewInternalHandler(bundleSvc)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH))
+	readiness := node_router.NewReadinessRouter(contentSvc, sqlDB.Ping)
+	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,

@@ -21,8 +21,11 @@ func NewRouter(
 	attemptUC inbound.AttemptUsecase,
 	integrityUC inbound.IntegrityUsecase,
 	internalHandler *handler.InternalHandler,
+	readiness http.Handler,
 ) http.Handler {
 	r := chi.NewRouter()
+
+	r.Mount("/", readiness)
 
 	r.Route("/api/v1/student", func(r chi.Router) {
 		r.Use(node_middleware.AuthMiddleware(issuer))

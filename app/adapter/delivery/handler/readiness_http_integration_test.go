@@ -4,7 +4,6 @@ package handler_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,18 +62,8 @@ func TestIntegration_ReadyzAndContentRecoverAfterUnready(t *testing.T) {
 	internalH := handler.NewInternalHandler(bundleSvc)
 
 	r := chi.NewRouter()
-	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		unready := contentSvc.UnreadyExams()
-		if len(unready) > 0 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "unready"})
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-	})
-	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH))
+	readiness := node_router.NewReadinessRouter(contentSvc, func() error { return db.Error })
+	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
 
 	get := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

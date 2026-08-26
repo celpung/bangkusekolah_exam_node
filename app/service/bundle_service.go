@@ -108,14 +108,18 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 		participants[i] = entity.Participant{ID: p.ID, ExamID: bundle.Exam.ID, StudentID: p.StudentID, StudentName: p.StudentName, AccessCode: p.AccessCode}
 	}
 	exam.ContentHash = contentHash(items, participants, exam)
-	if err := s.repo.ReplaceBundle(ctx, exam, items, participants); err != nil {
+	// All-or-nothing bundle replacement: the destructive multi-table swap
+	// (delete old exam/items/participants, insert new) must roll back on any
+	// failure — a partial bundle would break every downstream check.
+	if err := s.txManager.Atomic(ctx, func(txCtx context.Context) error {
+		return s.repo.ReplaceBundle(txCtx, exam, items, participants)
+	}); err != nil {
 		return err
 	}
-	// Rebuild the content cache from what is now durably stored. If this
-	// fails, the DB is correct but the cache is stale — GetExamContent keeps
-	// serving the previous snapshot (or ErrExamNotLoaded for a new exam), and
-	// Preflight refuses to pass until RebuildExam succeeds. The load can be
-	// safely retried: ReplaceBundle is idempotent.
+	// Rebuild/publish the cache only after the transaction commits. If this
+	// fails the exam is marked unready: /readyz reports 503 and
+	// GetExamContent refuses to serve until a retry succeeds. The load can
+	// be safely retried: ReplaceBundle is idempotent.
 	return s.contentSvc.RebuildExam(ctx, exam.ID)
 }
 
