@@ -127,6 +127,14 @@ func (s *ContentService) CacheReadyExams() []string {
 	return out
 }
 
+// DropFromCache removes an exam's cache entry (test/ops helper for simulating
+// a DB-committed bundle whose cache publication never happened).
+func (s *ContentService) DropFromCache(examID string) {
+	s.mu.Lock()
+	delete(s.cache, examID)
+	s.mu.Unlock()
+}
+
 // GetExamContent returns the cached content for exactly the requested exam.
 // A mismatched or unbuilt exam is an error — never another exam's content.
 // An exam whose latest rebuild failed is refused with ErrExamContentNotReady:

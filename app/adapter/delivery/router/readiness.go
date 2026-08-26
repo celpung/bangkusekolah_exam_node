@@ -17,9 +17,9 @@ type ReadinessReporter interface {
 }
 
 // NewReadinessRouter builds the operational health surface shared by
-// cmd/examnode: /livez always 200, /readyz fails closed unless at least one
-// exam is loaded AND every persisted exam has a successfully built cache.
-func NewReadinessRouter(readiness ReadinessReporter, loadedExamCount func() (int, error), ping func() error) http.Handler {
+// cmd/examnode: /livez always 200, /readyz fails closed unless the persisted
+// exam ID set exactly equals the cache-ready exam ID set (and is non-empty).
+func NewReadinessRouter(readiness ReadinessReporter, loadedExamIDs func() ([]string, error), ping func() error) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -33,35 +33,28 @@ func NewReadinessRouter(readiness ReadinessReporter, loadedExamCount func() (int
 				return
 			}
 		}
-		// Fail closed: a node with no loaded bundle cannot serve students.
-		loaded, err := loadedExamCount()
+		persistedIDs, err := loadedExamIDs()
 		if err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unready", "error": "cannot count exams"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unready", "error": "cannot list exams"})
 			return
 		}
-		if loaded == 0 {
+		// Fail closed: a node with no loaded bundle cannot serve students.
+		if len(persistedIDs) == 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "unready", "reason": "no exams loaded"})
 			return
 		}
-		// Every persisted exam needs a built cache. readyInDB counts cached
-		// IDs that are still persisted (a replaced exam leaves a stale cache
-		// entry behind until its rebuild overwrites it).
-		persisted := make(map[string]struct{}, loaded)
+		// Exact set comparison: persisted IDs must equal cache-ready IDs and
+		// no exam may be in the unready set. This catches a partially built
+		// cache, an unready rebuild, AND stale cache entries for exams that
+		// were replaced or deleted.
+		cached := make(map[string]struct{}, len(readiness.CacheReadyExams()))
 		for _, id := range readiness.CacheReadyExams() {
-			persisted[id] = struct{}{}
+			cached[id] = struct{}{}
 		}
 		unready := readiness.UnreadyExams()
-		notReady := 0
-		for id := range unready {
-			delete(persisted, id)
-		}
-		// After removing unready IDs, whatever remains in the cached set that
-		// is not verifiable against persistence cannot be trusted; readiness
-		// requires unready empty and at least one cached exam.
-		notReady = len(unready)
-		if notReady > 0 || len(persisted) == 0 {
+		if len(unready) > 0 || !sameSet(persistedIDs, cached) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "unready", "reason": "exams awaiting content rebuild"})
 			return
@@ -70,4 +63,22 @@ func NewReadinessRouter(readiness ReadinessReporter, loadedExamCount func() (int
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
 	return r
+}
+
+// sameSet reports whether both slices contain exactly the same string IDs,
+// ignoring order and duplicates.
+func sameSet(a []string, b map[string]struct{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	setA := make(map[string]struct{}, len(a))
+	for _, id := range a {
+		setA[id] = struct{}{}
+	}
+	for id := range b {
+		if _, ok := setA[id]; !ok {
+			return false
+		}
+	}
+	return true
 }

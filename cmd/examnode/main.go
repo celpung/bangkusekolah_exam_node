@@ -64,12 +64,16 @@ func main() {
 
 	internalH := handler.NewInternalHandler(bundleSvc)
 	readiness := node_router.NewReadinessRouter(contentSvc,
-		func() (int, error) {
+		func() ([]string, error) {
 			exams, err := repo.ListExams(context.Background())
 			if err != nil {
-				return 0, err
+				return nil, err
 			}
-			return len(exams), nil
+			ids := make([]string, len(exams))
+			for i, e := range exams {
+				ids[i] = e.ID
+			}
+			return ids, nil
 		},
 		sqlDB.Ping)
 	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
