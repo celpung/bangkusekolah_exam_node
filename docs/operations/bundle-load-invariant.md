@@ -29,7 +29,8 @@ cmd/bundleload runs BEFORE examnode starts and NEVER concurrently with it.
 | `bundleload` while `examnode` is down | Safe: no live cache to invalidate; startup rehydrates from DB |
 | `bundleload` while `examnode` is up | FORBIDDEN: `examnode`'s in-memory cache would go stale with no readiness gate to catch it |
 | Concurrent internal pushes for one exam | Serialized by `LockExam`; generation tokens prevent stale publication |
-| Failed load | Transaction rolls back; readiness stays closed until a successful retry |
+| Failed load of an EXISTING exam | Rollback; the exam remains unready until a retry publishes successfully |
+| Failed load of a NEW exam | Rollback; transient state is removed and other healthy exams remain ready |
 
 ## If live external loads are ever required
 
