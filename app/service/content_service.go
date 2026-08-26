@@ -71,20 +71,30 @@ func (s *ContentService) BeginRebuild(examID string) uint64 {
 	return token
 }
 
-// CancelRebuild handles the state after a rolled-back transaction. The DB
-// still holds whatever version was last successfully published — which the
-// service cannot verify from here — so the exam REMAINS unready with an
-// explicit "publication failed" cause until a retry succeeds and publishes.
-// Only when this operation's own in-progress marker is present AND no rows
-// were changed (marker untouched by a failure) is readiness restored.
+// CancelRebuild handles the state after a rolled-back transaction.
+//
+//   - NEW exam (never persisted): the rollback removed the only attempt to
+//     create it — drop the transient marker so a failed new bundle cannot
+//     take unrelated healthy exams offline.
+//   - EXISTING exam: the DB still holds the last successfully published
+//     version but the service cannot re-verify it from here — keep the exam
+//     unready with an explicit cause until a retry succeeds and publishes.
+//
+// Both paths are generation-guarded: a stale operation never mutates newer
+// state.
 func (s *ContentService) CancelRebuild(examID string, token uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.generation[examID] != token {
 		return false // superseded by a newer operation
 	}
-	// Conservative fail-closed: a rolled-back load leaves publication state
-	// unknown, so keep the exam unready until a successful rebuild.
+	if _, cached := s.cache[examID]; !cached {
+		// New exam whose first load rolled back: nothing was ever served for
+		// it, so removing the marker cannot resurrect stale content.
+		delete(s.unready, examID)
+		return true
+	}
+	// Existing exam: conservative fail-closed until a successful rebuild.
 	s.unready[examID] = fmt.Errorf("%w: publication rolled back; retry required", node_error.ErrExamContentNotReady)
 	return true
 }
@@ -145,7 +155,15 @@ func (s *ContentService) RebuildExam(ctx context.Context, examID string, token .
 		return err
 	}
 
+	// HIGH-2: re-check the generation under the publish lock immediately
+	// before mutating state — a newer BeginRebuild that started while this
+	// rebuild was reading rows must win the publication race.
 	s.mu.Lock()
+	if len(token) > 0 && s.generation[examID] != token[0] {
+		s.mu.Unlock()
+		return fmt.Errorf("%w: generation %d superseded by %d before publish",
+			node_error.ErrExamContentNotReady, token[0], s.generation[examID])
+	}
 	s.cache[exam.ID] = &contentCache{content: content, etag: etag, gzipBytes: buf.Bytes(), rawBytes: raw}
 	delete(s.unready, exam.ID)
 	s.mu.Unlock()
