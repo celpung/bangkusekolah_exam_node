@@ -238,11 +238,9 @@ func (r *nodeRepository) FindExamByID(ctx context.Context, examID string) (*enti
 }
 
 func (r *nodeRepository) ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error) {
-	// The items table holds the bundle's item snapshots; per-exam partitioning
-	// of rows arrives with Task 19's bundle load. Until then every loaded
-	// bundle replaces the single items set, and GetExamContent's cache key +
-	// FindExamByID are the scoping boundary.
-	return r.listItemsWhere(ctx, "", nil)
+	// idx_items_exam (exam_id, section_sort_order, sort_order) scopes items to
+	// one exam's bundle — multi-exam nodes never share item rows.
+	return r.listItemsWhere(ctx, "exam_id = ?", []interface{}{examID})
 }
 
 func (r *nodeRepository) listItemsWhere(ctx context.Context, where string, args []interface{}) ([]entity.Item, error) {
@@ -269,6 +267,20 @@ func (r *nodeRepository) FindLatestAttemptByParticipant(ctx context.Context, par
 			return nil, node_error.ErrAttemptNotFound
 		}
 		return nil, fmt.Errorf("find latest attempt: %w", err)
+	}
+	return mapper.ToAttemptEntity(&m), nil
+}
+
+func (r *nodeRepository) FindLatestAttemptByParticipantAndExam(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
+	// idx_attempts_exam (exam_id, participant_id, attempt_no) serves this lookup.
+	db := helper.GetDB(ctx, r.db)
+	var m model.Attempt
+	if err := db.Where("exam_id = ? AND participant_id = ?", examID, participantID).
+		Order("attempt_no DESC").First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrResultNotAvailable
+		}
+		return nil, fmt.Errorf("find latest attempt by exam: %w", err)
 	}
 	return mapper.ToAttemptEntity(&m), nil
 }

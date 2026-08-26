@@ -61,6 +61,7 @@ type RubricCriterion struct {
 
 type Item struct {
 	ID                    string
+	ExamID                string
 	SectionID             string
 	SectionTitle          string
 	SectionSortOrder      int
@@ -87,6 +88,7 @@ type Attempt struct {
 	ID              string
 	ParticipantID   string
 	StudentID       string
+	ExamID          string
 	AttemptNo       int
 	Status          AttemptStatus
 	StartedAt       time.Time

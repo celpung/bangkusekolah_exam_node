@@ -73,11 +73,16 @@ func (h *AttemptHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetResult serves the participant's latest finished attempt. Mixed exams
-// return manual_required with the auto-graded subtotal (decision 10).
+// GetResult serves the participant's latest finished attempt for the
+// requested exam. Mixed exams return manual_required with the auto-graded
+// subtotal (decision 10); the JWT exam_id must match the path exam.
 func (h *AttemptHandler) GetResult(w http.ResponseWriter, r *http.Request) {
-	pid, _ := middleware.ParticipantIDFromContext(r.Context())
 	examID := chi.URLParam(r, "examId")
+	if tokenExamID, ok := middleware.ExamIDFromContext(r.Context()); ok && tokenExamID != examID {
+		delivery_helper.Error(w, http.StatusForbidden, "exam does not belong to your token")
+		return
+	}
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
 	att, err := h.attemptUC.GetResult(r.Context(), pid, examID)
 	if err != nil {
 		delivery_helper.HandleError(w, err)

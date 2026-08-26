@@ -39,7 +39,7 @@ func main() {
 	issuer := node_security.NewJWTIssuer(cfg)
 	contentSvc := service.NewContentService(repo)
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
-	integritySvc := service.NewIntegrityService(repo, idGen)
+	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)

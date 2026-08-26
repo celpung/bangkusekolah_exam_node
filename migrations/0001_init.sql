@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS exams (
 
 CREATE TABLE IF NOT EXISTS items (
   id                       VARCHAR(36)  NOT NULL PRIMARY KEY,
+  exam_id                  VARCHAR(36)  NOT NULL DEFAULT '',
   section_id               VARCHAR(36)  NOT NULL,
   section_title            VARCHAR(255) NOT NULL,
   section_sort_order       INT          NOT NULL DEFAULT 0,
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS items (
   rubric_criteria_json     JSON         NULL,
   points                   DECIMAL(8,2) NOT NULL,
   requires_manual_grading  TINYINT(1)   NOT NULL DEFAULT 0,
+  KEY idx_items_exam (exam_id, section_sort_order, sort_order),
   KEY idx_items_order (section_sort_order, sort_order)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   id                VARCHAR(36)  NOT NULL PRIMARY KEY,
   participant_id    VARCHAR(36)  NOT NULL,
   student_id        VARCHAR(36)  NOT NULL,
+  exam_id           VARCHAR(36)  NOT NULL DEFAULT '',
   attempt_no        INT          NOT NULL,
   status            VARCHAR(30)  NOT NULL,
   started_at        DATETIME     NOT NULL,
@@ -71,6 +74,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   grading_status    VARCHAR(30)  NOT NULL,
   harvested_at      DATETIME     NULL,
   UNIQUE KEY uniq_attempts_participant_no (participant_id, attempt_no),
+  KEY idx_attempts_exam (exam_id, participant_id, attempt_no),
   KEY idx_attempts_sweep (status, due_at),
   KEY idx_attempts_harvest (status, harvested_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -31,14 +31,14 @@ func ToAttemptEntity(m *model.Attempt) *entity.Attempt {
 	if m == nil {
 		return nil
 	}
-	return &entity.Attempt{ID: m.ID, ParticipantID: m.ParticipantID, StudentID: m.StudentID, AttemptNo: m.AttemptNo, Status: entity.AttemptStatus(m.Status), StartedAt: m.StartedAt, DueAt: m.DueAt, SubmittedAt: m.SubmittedAt, AutoSubmittedAt: m.AutoSubmittedAt, Score: m.Score, MaxScore: m.MaxScore, GradingStatus: entity.GradingStatus(m.GradingStatus), HarvestedAt: m.HarvestedAt}
+	return &entity.Attempt{ID: m.ID, ParticipantID: m.ParticipantID, StudentID: m.StudentID, ExamID: m.ExamID, AttemptNo: m.AttemptNo, Status: entity.AttemptStatus(m.Status), StartedAt: m.StartedAt, DueAt: m.DueAt, SubmittedAt: m.SubmittedAt, AutoSubmittedAt: m.AutoSubmittedAt, Score: m.Score, MaxScore: m.MaxScore, GradingStatus: entity.GradingStatus(m.GradingStatus), HarvestedAt: m.HarvestedAt}
 }
 
 func ToAttemptModel(e *entity.Attempt) *model.Attempt {
 	if e == nil {
 		return nil
 	}
-	return &model.Attempt{ID: e.ID, ParticipantID: e.ParticipantID, StudentID: e.StudentID, AttemptNo: e.AttemptNo, Status: string(e.Status), StartedAt: e.StartedAt, DueAt: e.DueAt, SubmittedAt: e.SubmittedAt, AutoSubmittedAt: e.AutoSubmittedAt, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), HarvestedAt: e.HarvestedAt}
+	return &model.Attempt{ID: e.ID, ParticipantID: e.ParticipantID, StudentID: e.StudentID, ExamID: e.ExamID, AttemptNo: e.AttemptNo, Status: string(e.Status), StartedAt: e.StartedAt, DueAt: e.DueAt, SubmittedAt: e.SubmittedAt, AutoSubmittedAt: e.AutoSubmittedAt, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), HarvestedAt: e.HarvestedAt}
 }
 
 func ToAnswerEntity(m *model.Answer) *entity.Answer {
@@ -108,5 +108,5 @@ func ToItemEntity(m *model.Item) *entity.Item {
 	if m.RubricCriteriaJSON != nil {
 		_ = json.Unmarshal([]byte(*m.RubricCriteriaJSON), &rubrics)
 	}
-	return &entity.Item{ID: m.ID, SectionID: m.SectionID, SectionTitle: m.SectionTitle, SectionSortOrder: m.SectionSortOrder, SortOrder: m.SortOrder, QuestionType: entity.QuestionType(m.QuestionType), PromptSnapshot: m.PromptSnapshot, OptionsSnapshotJSON: opts, AnswerKeySnapshotJSON: key, RubricCriteria: rubrics, Points: m.Points, RequiresManualGrading: m.RequiresManualGrading}
+	return &entity.Item{ID: m.ID, ExamID: m.ExamID, SectionID: m.SectionID, SectionTitle: m.SectionTitle, SectionSortOrder: m.SectionSortOrder, SortOrder: m.SortOrder, QuestionType: entity.QuestionType(m.QuestionType), PromptSnapshot: m.PromptSnapshot, OptionsSnapshotJSON: opts, AnswerKeySnapshotJSON: key, RubricCriteria: rubrics, Points: m.Points, RequiresManualGrading: m.RequiresManualGrading}
 }

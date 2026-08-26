@@ -27,10 +27,11 @@ func (Exam) TableName() string { return "exams" }
 
 type Item struct {
 	ID                    string  `gorm:"primaryKey;type:varchar(36)"`
+	ExamID                string  `gorm:"type:varchar(36);not null;default:'';index:idx_items_exam,priority:1"`
 	SectionID             string  `gorm:"type:varchar(36);not null"`
 	SectionTitle          string  `gorm:"type:varchar(255);not null"`
-	SectionSortOrder      int     `gorm:"not null;default:0"`
-	SortOrder             int     `gorm:"not null;default:0"`
+	SectionSortOrder      int     `gorm:"not null;default:0;index:idx_items_exam,priority:2"`
+	SortOrder             int     `gorm:"not null;default:0;index:idx_items_exam,priority:3"`
 	QuestionType          string  `gorm:"type:varchar(40);not null"`
 	PromptSnapshot        string  `gorm:"type:text;not null"`
 	OptionsSnapshotJSON   *string `gorm:"type:json"`
@@ -55,9 +56,10 @@ func (Participant) TableName() string { return "participants" }
 
 type Attempt struct {
 	ID              string     `gorm:"primaryKey;type:varchar(36)"`
-	ParticipantID   string     `gorm:"type:varchar(36);not null;index"`
+	ParticipantID   string     `gorm:"type:varchar(36);not null;index:idx_attempts_exam,priority:2"`
 	StudentID       string     `gorm:"type:varchar(36);not null"`
-	AttemptNo       int        `gorm:"not null"`
+	ExamID          string     `gorm:"type:varchar(36);not null;default:'';index:idx_attempts_exam,priority:1"`
+	AttemptNo       int        `gorm:"not null;index:idx_attempts_exam,priority:3"`
 	Status          string     `gorm:"type:varchar(30);not null;index"`
 	StartedAt       time.Time  `gorm:"type:datetime;not null"`
 	DueAt           time.Time  `gorm:"type:datetime;not null"`

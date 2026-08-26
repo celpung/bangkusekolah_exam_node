@@ -70,7 +70,7 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID string)
 		attemptNo := locked.AttemptCount + 1
 		attempt := &entity.Attempt{
 			ParticipantID: participantID, StudentID: locked.StudentID,
-			AttemptNo: attemptNo, Status: entity.AttemptInProgress,
+			ExamID: exam.ID, AttemptNo: attemptNo, Status: entity.AttemptInProgress,
 			StartedAt: now, DueAt: due, MaxScore: exam.MaxScore, GradingStatus: entity.GradingPending,
 		}
 		attempt.ID = s.idGen.NewID()
@@ -223,8 +223,8 @@ func finalizeStatus(answers []entity.Answer, hasManualItems bool) (float64, enti
 	return total, status
 }
 
-func (s *AttemptService) GetResult(ctx context.Context, participantID, _ string) (*entity.Attempt, error) {
-	attempt, err := s.repo.FindLatestAttemptByParticipant(ctx, participantID)
+func (s *AttemptService) GetResult(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
+	attempt, err := s.repo.FindLatestAttemptByParticipantAndExam(ctx, participantID, examID)
 	if err != nil {
 		return nil, err
 	}
