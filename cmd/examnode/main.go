@@ -34,6 +34,11 @@ func main() {
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 
+	// Fresh node databases work: apply pending migrations on startup.
+	if err := provider.Run(sqlDB); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+
 	repo := repository.NewNodeRepository(db)
 	txManager := helper.NewTxManager(db)
 	idGen := &uuidGenerator{}

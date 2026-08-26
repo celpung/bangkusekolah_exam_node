@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -99,6 +100,11 @@ func TestIntegration_BundleLoadReplaceLifecycle(t *testing.T) {
 
 	// 4. preflight passes with matching counts
 	if err := bundleSvc.Preflight(ctx, "exam-life", 1, 2); err != nil {
+		dbItems, _ := repo.ListItemsByExamID(ctx, "exam-life")
+		dbParts, _ := repo.ListParticipantsByExam(ctx, "exam-life")
+		dbExam, _ := repo.FindExamByID(ctx, "exam-life")
+		lj, _ := json.Marshal(contentHashView(dbItems, dbParts, dbExam))
+		t.Logf("DEBUG stored view: %s", lj)
 		t.Fatalf("preflight after lifecycle: %v", err)
 	}
 	if !contentSvc.rebuiltExams["exam-life"] {

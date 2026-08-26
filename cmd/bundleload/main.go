@@ -1,5 +1,6 @@
-// bundleload loads one exam bundle JSON into the node database. The checksum
-// is verified before anything touches the DB.
+// bundleload loads one exam bundle JSON into the node database. It runs the
+// node migrations first (fresh DB works), then verifies the checksum before
+// anything else touches the DB.
 package main
 
 import (
@@ -15,7 +16,6 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/provider"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
-	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
@@ -58,6 +58,11 @@ func main() {
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 
+	// Fresh node databases work: apply pending migrations first.
+	if err := provider.Run(sqlDB); err != nil {
+		fatalf("migrate: %v", err)
+	}
+
 	repo := repository.NewNodeRepository(db)
 	txManager := helper.NewTxManager(db)
 	contentSvc := service.NewContentService(repo)
@@ -67,7 +72,6 @@ func main() {
 		fatalf("load bundle: %v", err)
 	}
 	fmt.Printf("ok %s\n", bundle.Checksum)
-	_ = node_security.NewJWTIssuer // issuer lives in the server binary; CLI only loads data
 }
 
 func fatalf(format string, args ...interface{}) {
