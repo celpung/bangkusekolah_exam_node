@@ -20,8 +20,10 @@ import (
 
 func codeFor(id string) string {
 	codes := map[string]string{
-		"exam-dep-a": "SSSSSS-111111",
-		"exam-dep-b": "SSSSSS-222222",
+		"exam-dep-a":  "SSSSSS-111111",
+		"exam-dep-b":  "SSSSSS-222222",
+		"exam-fail-a": "SSSSSS-333333",
+		"exam-ok-b":   "SSSSSS-444444",
 	}
 	if c, ok := codes[id]; ok {
 		return c

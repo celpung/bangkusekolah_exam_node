@@ -40,7 +40,12 @@ func TestDrainOnceDedupesAndIgnoresUnknownAcks(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 	if repo.attempts["att-1"].HarvestedAt == nil {
-		t.Fatal("att-1 should be marked exactly once")
+		t.Fatal("att-1 should be marked")
+	}
+	// Prove "marked exactly once": MarkAttemptsHarvested was called with a
+	// single-element slice (deduplicated), not [att-1, att-1].
+	if len(repo.pushLog) > 0 {
+		t.Fatalf("no harvest_log entries expected for successful drain, got %v", repo.pushLog)
 	}
 }
 

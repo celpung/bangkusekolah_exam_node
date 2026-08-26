@@ -95,13 +95,17 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 	}
 
 	total := 0
+	var drainErrors []string
 	// Deterministic order for stable runbook output.
 	for _, depID := range sortedKeys(byDeployment) {
 		group := byDeployment[depID]
 		for len(group) > 0 {
 			n, perr := s.drainDeployment(ctx, depID, group)
 			if perr != nil {
-				return total, perr
+				slog.ErrorContext(ctx, "harvest: deployment drain failed, continuing",
+					"deployment", depID, "error", perr)
+				drainErrors = append(drainErrors, fmt.Sprintf("dep %s: %s", depID, perr.Error()))
+				break // skip remaining batches of this deployment, try next
 			}
 			total += n
 			if n < len(group) {
@@ -111,11 +115,13 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 		}
 	}
 
-	// Aggregated diagnostic error so callers know some attempts were skipped,
-	// without losing the work already pushed for valid deployments.
-	if len(resolveFailures) > 0 {
-		return total, fmt.Errorf("harvest skipped %d orphaned attempt(s): %s",
-			len(resolveFailures), strings.Join(resolveFailures, "; "))
+	// Aggregate all diagnostic errors: orphans + per-deployment failures.
+	var allErrors []string
+	allErrors = append(allErrors, resolveFailures...)
+	allErrors = append(allErrors, drainErrors...)
+	if len(allErrors) > 0 {
+		return total, fmt.Errorf("harvest completed with %d accepted and %d issue(s): %s",
+			total, len(allErrors), strings.Join(allErrors, "; "))
 	}
 	return total, nil
 }

@@ -11,7 +11,6 @@ func setRequired(t *testing.T) {
 	t.Setenv("NODE_JWT_SECRET", "0123456789012345678901234567890123456789")
 	t.Setenv("CENTRAL_BASE_URL", "https://central.example.test")
 	t.Setenv("CENTRAL_NODE_TOKEN", "node-1.SECRET")
-	t.Setenv("DEPLOYMENT_ID", "dep-1")
 }
 
 func TestLoadAppliesTheDocumentedPoolDefaults(t *testing.T) {
@@ -49,7 +48,7 @@ func TestLoadRejectsAShortJWTSecret(t *testing.T) {
 }
 
 func TestLoadRejectsAMissingRequiredValue(t *testing.T) {
-	for _, key := range []string{"DB_DSN", "CENTRAL_BASE_URL", "CENTRAL_NODE_TOKEN", "DEPLOYMENT_ID"} {
+	for _, key := range []string{"DB_DSN", "CENTRAL_BASE_URL", "CENTRAL_NODE_TOKEN"} {
 		t.Run(key, func(t *testing.T) {
 			setRequired(t)
 			t.Setenv(key, "")

@@ -70,7 +70,6 @@ func Load() (*Config, error) {
 		"DB_DSN":             cfg.DBDSN,
 		"CENTRAL_BASE_URL":   cfg.CentralBaseURL,
 		"CENTRAL_NODE_TOKEN": cfg.CentralNodeToken,
-		"DEPLOYMENT_ID":      cfg.DeploymentID,
 	}
 	for key, value := range required {
 		if value == "" {
