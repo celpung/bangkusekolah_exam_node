@@ -1,22 +1,42 @@
 services:
   mysql:
     image: mysql:8.0
-    command: --max-connections=200
-    ports:
-      - "127.0.0.1:3307:3306"
+    command: --max-connections=200 --innodb-buffer-pool-size=1G
     environment:
-      MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: examnode
       MYSQL_USER: examnode
       MYSQL_PASSWORD: examnode
+      MYSQL_ROOT_PASSWORD: examnode
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "examnode", "-pexamnode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     volumes:
       - mysql_data:/var/lib/mysql
+
   examnode:
     build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_DSN: "examnode:examnode@tcp(mysql:3306)/examnode?parseTime=true&charset=utf8mb4&collation=utf8mb4_general_ci"
+      NODE_JWT_SECRET: "${NODE_JWT_SECRET:?set a 32+ character secret}"
+      CENTRAL_BASE_URL: "${CENTRAL_BASE_URL:?central base URL}"
+      CENTRAL_NODE_TOKEN: "${CENTRAL_NODE_TOKEN:?node bearer token from central registration}"
+      DEPLOYMENT_ID: "${DEPLOYMENT_ID:?from central DeployExam response}"
     ports:
       - "127.0.0.1:8080:8080"
-    env_file: .env
-    depends_on:
-      - mysql
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/livez"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
 volumes:
   mysql_data:

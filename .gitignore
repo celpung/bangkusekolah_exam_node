@@ -5,3 +5,4 @@ storages/
 /bundleload
 /preflight
 /examharvest
+scripts/*.log
