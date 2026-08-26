@@ -81,6 +81,15 @@ func (f *fakeBundleRepo) ListParticipants(_ context.Context) ([]entity.Participa
 	}
 	return out, nil
 }
+func (f *fakeBundleRepo) ListParticipantsByExam(_ context.Context, examID string) ([]entity.Participant, error) {
+	out := make([]entity.Participant, 0, len(f.participants))
+	for _, p := range f.participants {
+		if p.ExamID == examID {
+			out = append(out, *p)
+		}
+	}
+	return out, nil
+}
 
 type fakeContentSvc struct{ rebuilt bool }
 

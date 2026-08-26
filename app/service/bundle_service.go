@@ -36,13 +36,17 @@ func NewBundleService(repo outbound_repository.NodeRepository, txManager outboun
 // declaration order and map keys sorted, so both sides compute identical
 // values from the same bytes.
 func ComputeBundleChecksum(bundle inbound.ExamNodeBundle) string {
+	sum := sha256.Sum256(canonicalBundleBytes(bundle))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func canonicalBundleBytes(bundle inbound.ExamNodeBundle) []byte {
 	bundle.Checksum = ""
 	encoded, err := json.Marshal(bundle)
 	if err != nil {
-		return ""
+		return nil
 	}
-	sum := sha256.Sum256(encoded)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return encoded
 }
 
 // LoadBundle validates and stores one exam's bundle atomically. Loading the
@@ -98,16 +102,24 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 	}
 	participants := make([]entity.Participant, len(bundle.Participants))
 	for i, p := range bundle.Participants {
-		participants[i] = entity.Participant{ID: p.ID, StudentID: p.StudentID, StudentName: p.StudentName, AccessCode: p.AccessCode}
+		participants[i] = entity.Participant{ID: p.ID, ExamID: bundle.Exam.ID, StudentID: p.StudentID, StudentName: p.StudentName, AccessCode: p.AccessCode}
 	}
+	exam.ContentHash = contentHash(items, participants)
 	if err := s.repo.ReplaceBundle(ctx, exam, items, participants); err != nil {
 		return err
 	}
+	// Rebuild the content cache from what is now durably stored. If this
+	// fails, the DB is correct but the cache is stale — GetExamContent keeps
+	// serving the previous snapshot (or ErrExamNotLoaded for a new exam), and
+	// Preflight refuses to pass until RebuildExam succeeds. The load can be
+	// safely retried: ReplaceBundle is idempotent.
 	return s.contentSvc.RebuildExam(ctx, exam.ID)
 }
 
-// Preflight re-checks stored counts against central's deployment numbers.
-// Disk and clock checks live in cmd/preflight — they need os.Stat and NTP.
+// Preflight re-checks one exam's stored bundle against central's expected
+// numbers: item and participant counts scoped to this exam, plus the bundle
+// checksum recomputed from what is actually stored. Disk and clock checks
+// live in cmd/preflight — they need os.Stat and a network time source.
 func (s *BundleService) Preflight(ctx context.Context, examID string, expectedItemCount, expectedParticipantCount int) error {
 	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
@@ -120,7 +132,7 @@ func (s *BundleService) Preflight(ctx context.Context, examID string, expectedIt
 	if err != nil {
 		return err
 	}
-	participants, err := s.repo.ListParticipants(ctx)
+	participants, err := s.repo.ListParticipantsByExam(ctx, examID)
 	if err != nil {
 		return err
 	}
@@ -128,7 +140,47 @@ func (s *BundleService) Preflight(ctx context.Context, examID string, expectedIt
 		return fmt.Errorf("%w: exam %s items %d/%d participants %d/%d",
 			node_error.ErrPreflightFailed, examID, len(items), expectedItemCount, len(participants), expectedParticipantCount)
 	}
+	// Content-hash re-verification: sections are not stored as rows, so the
+	// full bundle cannot be reconstructed from the DB byte-identically.
+	// LoadBundle records a hash of the stored item/participant set; preflight
+	// recomputes it and fails if the rows were hand-edited since.
+	recomputed := contentHash(items, participants)
+	if recomputed != exam.ContentHash {
+		return fmt.Errorf("%w: exam %s stored content hash %q does not match load-time %q",
+			node_error.ErrPreflightFailed, examID, recomputed, exam.ContentHash)
+	}
 	return nil
+}
+
+func contentHash(items []entity.Item, participants []entity.Participant) string {
+	type row struct {
+		ID     string  `json:"id"`
+		ExamID string  `json:"exam_id"`
+		Points float64 `json:"points"`
+	}
+	out := struct {
+		Items        []row `json:"items"`
+		Participants []struct {
+			ID         string `json:"id"`
+			ExamID     string `json:"exam_id"`
+			StudentID  string `json:"student_id"`
+			AccessCode string `json:"access_code"`
+		} `json:"participants"`
+	}{}
+	for _, it := range items {
+		out.Items = append(out.Items, row{ID: it.ID, ExamID: it.ExamID, Points: it.Points})
+	}
+	for _, p := range participants {
+		out.Participants = append(out.Participants, struct {
+			ID         string `json:"id"`
+			ExamID     string `json:"exam_id"`
+			StudentID  string `json:"student_id"`
+			AccessCode string `json:"access_code"`
+		}{ID: p.ID, ExamID: p.ExamID, StudentID: p.StudentID, AccessCode: p.AccessCode})
+	}
+	b, _ := json.Marshal(out)
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func sectionTitle(sections []inbound.ExamNodeBundleSection, id string) string {

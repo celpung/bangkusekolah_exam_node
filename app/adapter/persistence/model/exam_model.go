@@ -20,6 +20,7 @@ type Exam struct {
 	HasManualItems        bool      `gorm:"type:tinyint(1);not null"`
 	AccessCodePrefix      string    `gorm:"type:varchar(10);not null"`
 	BundleChecksum        string    `gorm:"type:varchar(80);not null"`
+	ContentHash           string    `gorm:"type:varchar(80);not null;default:''"`
 	LoadedAt              time.Time `gorm:"type:datetime;not null"`
 }
 
@@ -45,6 +46,7 @@ func (Item) TableName() string { return "items" }
 
 type Participant struct {
 	ID              string  `gorm:"primaryKey;type:varchar(36)"`
+	ExamID          string  `gorm:"type:varchar(36);not null;default:'';index:idx_participants_exam"`
 	StudentID       string  `gorm:"type:varchar(36);not null"`
 	StudentName     string  `gorm:"type:varchar(255);not null"`
 	AccessCode      string  `gorm:"type:varchar(20);not null;uniqueIndex:uniq_participants_access_code"`

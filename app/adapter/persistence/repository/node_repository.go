@@ -281,8 +281,25 @@ func (r *nodeRepository) CreateExam(ctx context.Context, exam *entity.Exam) erro
 	return db.Create(m).Error
 }
 
+func (r *nodeRepository) ListParticipantsByExam(ctx context.Context, examID string) ([]entity.Participant, error) {
+	// idx_participants_exam scopes the roster to one exam's bundle.
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Participant
+	if err := db.Where("exam_id = ?", examID).Order("student_name ASC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list participants by exam: %w", err)
+	}
+	entities := make([]entity.Participant, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToParticipantEntity(&models[i])
+	}
+	return entities, nil
+}
+
 // ReplaceBundle swaps one exam's bundle: delete the exam's old rows, then
 // bulk-insert the new set. BundleService wraps this in txManager.Atomic.
+// Participants are reconciled by ID: existing rows are updated, missing ones
+// inserted, and rows no longer in the bundle deleted — so reloading the same
+// bundle is idempotent and a changed roster is fully replaced.
 func (r *nodeRepository) ReplaceBundle(ctx context.Context, exam *entity.Exam, items []entity.Item, participants []entity.Participant) error {
 	db := helper.GetDB(ctx, r.db)
 	mExam := mapper.ToExamModel(exam)
@@ -305,15 +322,47 @@ func (r *nodeRepository) ReplaceBundle(ctx context.Context, exam *entity.Exam, i
 			return fmt.Errorf("insert items: %w", err)
 		}
 	}
-	if len(participants) > 0 {
-		mParts := make([]model.Participant, len(participants))
-		for i := range participants {
-			mParts[i] = *mapper.ToParticipantModel(&participants[i])
+
+	// Participants: reconcile against the incoming roster.
+	keep := make(map[string]struct{}, len(participants))
+	newOnes := make([]model.Participant, 0, len(participants))
+	existing := map[string]struct{}{}
+	var current []model.Participant
+	if err := db.Where("exam_id = ?", exam.ID).Find(&current).Error; err != nil {
+		return fmt.Errorf("load current participants: %w", err)
+	}
+	for _, p := range current {
+		existing[p.ID] = struct{}{}
+	}
+	for i := range participants {
+		p := participants[i]
+		keep[p.ID] = struct{}{}
+		if _, ok := existing[p.ID]; ok {
+			if err := db.Model(&model.Participant{}).Where("id = ?", p.ID).Updates(map[string]interface{}{
+				"student_id":   p.StudentID,
+				"student_name": p.StudentName,
+				"access_code":  p.AccessCode,
+			}).Error; err != nil {
+				return fmt.Errorf("update participant %s: %w", p.ID, err)
+			}
+			continue
 		}
-		if err := db.Create(&mParts).Error; err != nil {
+		newOnes = append(newOnes, *mapper.ToParticipantModel(&p))
+	}
+	// delete participants scoped to this exam that are no longer in the roster
+	for id := range existing {
+		if _, ok := keep[id]; !ok {
+			if err := db.Where("id = ? AND exam_id = ?", id, exam.ID).Delete(&model.Participant{}).Error; err != nil {
+				return fmt.Errorf("delete stale participant %s: %w", id, err)
+			}
+		}
+	}
+	if len(newOnes) > 0 {
+		if err := db.Create(&newOnes).Error; err != nil {
 			return fmt.Errorf("insert participants: %w", err)
 		}
 	}
+
 	if err := db.Create(mExam).Error; err != nil {
 		return fmt.Errorf("insert exam: %w", err)
 	}

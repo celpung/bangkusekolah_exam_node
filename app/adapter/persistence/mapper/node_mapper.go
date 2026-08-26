@@ -17,7 +17,7 @@ func ToExamEntity(m *model.Exam) *entity.Exam {
 		StartsAt: m.StartsAt, EndsAt: m.EndsAt, DurationMinutes: m.DurationMinutes, MaxAttempts: m.MaxAttempts,
 		ShuffleQuestions: m.ShuffleQuestions, ShuffleOptions: m.ShuffleOptions, ShowResultImmediately: m.ShowResultImmediately,
 		PassingScore: m.PassingScore, ResultSelectionPolicy: m.ResultSelectionPolicy, MaxScore: m.MaxScore,
-		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, LoadedAt: m.LoadedAt,
+		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, LoadedAt: m.LoadedAt,
 	}
 }
 
@@ -31,7 +31,8 @@ func ToExamModel(e *entity.Exam) *model.Exam {
 		ShuffleQuestions: e.ShuffleQuestions, ShuffleOptions: e.ShuffleOptions, ShowResultImmediately: e.ShowResultImmediately,
 		PassingScore: e.PassingScore, ResultSelectionPolicy: e.ResultSelectionPolicy, MaxScore: e.MaxScore,
 		HasManualItems: e.HasManualItems, AccessCodePrefix: e.AccessCodePrefix, BundleChecksum: e.BundleChecksum,
-		LoadedAt: time.Now(),
+		ContentHash: e.ContentHash,
+		LoadedAt:    time.Now(),
 	}
 }
 
@@ -39,14 +40,14 @@ func ToParticipantEntity(m *model.Participant) *entity.Participant {
 	if m == nil {
 		return nil
 	}
-	return &entity.Participant{ID: m.ID, StudentID: m.StudentID, StudentName: m.StudentName, AccessCode: m.AccessCode, AttemptCount: m.AttemptCount, LatestAttemptID: m.LatestAttemptID}
+	return &entity.Participant{ID: m.ID, ExamID: m.ExamID, StudentID: m.StudentID, StudentName: m.StudentName, AccessCode: m.AccessCode, AttemptCount: m.AttemptCount, LatestAttemptID: m.LatestAttemptID}
 }
 
 func ToParticipantModel(e *entity.Participant) *model.Participant {
 	if e == nil {
 		return nil
 	}
-	return &model.Participant{ID: e.ID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode}
+	return &model.Participant{ID: e.ID, ExamID: e.ExamID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode}
 }
 
 func ToAttemptEntity(m *model.Attempt) *entity.Attempt {

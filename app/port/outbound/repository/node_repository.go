@@ -38,4 +38,5 @@ type NodeRepository interface {
 	CreateExam(ctx context.Context, exam *entity.Exam) error
 	ReplaceBundle(ctx context.Context, exam *entity.Exam, items []entity.Item, participants []entity.Participant) error
 	ListParticipants(ctx context.Context) ([]entity.Participant, error)
+	ListParticipantsByExam(ctx context.Context, examID string) ([]entity.Participant, error)
 }

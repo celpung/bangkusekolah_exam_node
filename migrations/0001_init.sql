@@ -50,12 +50,14 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE TABLE IF NOT EXISTS participants (
   id                VARCHAR(36)  NOT NULL PRIMARY KEY,
+  exam_id           VARCHAR(36)  NOT NULL DEFAULT '',
   student_id        VARCHAR(36)  NOT NULL,
   student_name      VARCHAR(255) NOT NULL,
   access_code       VARCHAR(20)  NOT NULL,
   attempt_count     INT          NOT NULL DEFAULT 0,
   latest_attempt_id VARCHAR(36)  NULL,
-  UNIQUE KEY uniq_participants_access_code (access_code)
+  UNIQUE KEY uniq_participants_access_code (access_code),
+  KEY idx_participants_exam (exam_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS attempts (

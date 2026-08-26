@@ -62,6 +62,7 @@ type Exam struct {
 	HasManualItems        bool
 	AccessCodePrefix      string
 	BundleChecksum        string
+	ContentHash           string
 	LoadedAt              time.Time
 }
 
@@ -90,6 +91,7 @@ type Item struct {
 
 type Participant struct {
 	ID              string
+	ExamID          string
 	StudentID       string
 	StudentName     string
 	AccessCode      string
