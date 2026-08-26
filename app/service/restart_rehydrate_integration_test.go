@@ -60,16 +60,8 @@ func TestIntegration_RestartRehydratesCache(t *testing.T) {
 		t.Fatal("expected cold cache after restart, got content")
 	}
 
-	// Startup rehydrate path (same loop as cmd/examnode main).
-	exams, err := repo.ListExams(context.Background())
-	if err != nil {
-		t.Fatalf("list exams: %v", err)
-	}
-	for _, exam := range exams {
-		if err := restartedContentSvc.RebuildExam(context.Background(), exam.ID); err != nil {
-			t.Fatalf("rehydrate exam %s: %v", exam.ID, err)
-		}
-	}
+	// Startup rehydrate path — the REAL function cmd/examnode calls.
+	RehydrateAllCaches(context.Background(), repo, restartedContentSvc)
 
 	content, etag, gzipped, raw, err := restartedContentSvc.GetExamContent(context.Background(), "exam-restart")
 	if err != nil {

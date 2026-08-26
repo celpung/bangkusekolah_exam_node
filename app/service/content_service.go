@@ -18,10 +18,15 @@ import (
 // ContentService caches immutable exam content keyed by exam ID. One VPS
 // hosts multiple exams (typically 3-10), so every lookup and rebuild is
 // scoped to a single exam — there is no global cache to cross-serve.
+//
+// Readiness contract: RebuildExam failure during a live bundle push marks the
+// exam unready while the DB keeps the new rows; IsExamReady reports that
+// state and /readyz fails until a retry succeeds.
 type ContentService struct {
-	repo  outbound_repository.NodeRepository
-	mu    sync.RWMutex
-	cache map[string]*contentCache // key: exam ID
+	repo    outbound_repository.NodeRepository
+	mu      sync.RWMutex
+	cache   map[string]*contentCache // key: exam ID
+	unready map[string]error         // exams whose last rebuild failed
 }
 
 type contentCache struct {
@@ -32,18 +37,22 @@ type contentCache struct {
 }
 
 func NewContentService(repo outbound_repository.NodeRepository) *ContentService {
-	return &ContentService{repo: repo, cache: map[string]*contentCache{}}
+	return &ContentService{repo: repo, cache: map[string]*contentCache{}, unready: map[string]error{}}
 }
 
 // RebuildExam must be called by BundleService after loading one exam's bundle
-// (Task 19). It is the only writer; GetExamContent serves from the snapshot.
+// (Task 19) and by startup rehydration. It is the only writer; GetExamContent
+// serves from the snapshot. A failure marks the exam unready until a retry
+// succeeds.
 func (s *ContentService) RebuildExam(ctx context.Context, examID string) error {
 	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
+		s.markUnready(examID, err)
 		return err
 	}
 	items, err := s.repo.ListItemsByExamID(ctx, examID)
 	if err != nil {
+		s.markUnready(examID, err)
 		return err
 	}
 	content := &inbound.ExamContent{Exam: exam}
@@ -61,23 +70,48 @@ func (s *ContentService) RebuildExam(ctx context.Context, examID string) error {
 	// order and map keys sorted, so the ETag is stable across restarts.
 	raw, err := json.Marshal(content)
 	if err != nil {
-		return fmt.Errorf("marshal content: %w", err)
+		err = fmt.Errorf("marshal content: %w", err)
+		s.markUnready(examID, err)
+		return err
 	}
 	sum := sha256.Sum256(raw)
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"` // quoted per RFC 7232
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write(raw); err != nil {
-		return fmt.Errorf("gzip content: %w", err)
+		err = fmt.Errorf("gzip content: %w", err)
+		s.markUnready(examID, err)
+		return err
 	}
 	if err := gz.Close(); err != nil {
-		return fmt.Errorf("close gzip writer: %w", err)
+		err = fmt.Errorf("close gzip writer: %w", err)
+		s.markUnready(examID, err)
+		return err
 	}
 
 	s.mu.Lock()
 	s.cache[exam.ID] = &contentCache{content: content, etag: etag, gzipBytes: buf.Bytes(), rawBytes: raw}
+	delete(s.unready, exam.ID)
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *ContentService) markUnready(examID string, cause error) {
+	s.mu.Lock()
+	s.unready[examID] = cause
+	s.mu.Unlock()
+}
+
+// UnreadyExams returns every exam whose latest rebuild failed with its cause —
+// /readyz turns this into a 503 until retries succeed.
+func (s *ContentService) UnreadyExams() map[string]error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]error, len(s.unready))
+	for id, cause := range s.unready {
+		out[id] = cause
+	}
+	return out
 }
 
 // GetExamContent returns the cached content for exactly the requested exam.

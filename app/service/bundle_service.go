@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
@@ -220,7 +221,23 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 		ResultSelectionPolicy: entity.ExamResultSelectionPolicy(exam.ResultSelectionPolicy),
 		MaxScore:              exam.MaxScore, HasManualItems: exam.HasManualItems, AccessCodePrefix: exam.AccessCodePrefix,
 	}}
-	for _, it := range items {
+	// Canonical order: the bundle's incoming row order differs from the
+	// repository's read-back ordering, so both sides sort by stable keys
+	// (items: section_sort_order, sort_order, id; participants: id) before
+	// hashing — otherwise a valid bundle can fail preflight untampered.
+	sorted := make([]entity.Item, len(items))
+	copy(sorted, items)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.SectionSortOrder != b.SectionSortOrder {
+			return a.SectionSortOrder < b.SectionSortOrder
+		}
+		if a.SortOrder != b.SortOrder {
+			return a.SortOrder < b.SortOrder
+		}
+		return a.ID < b.ID
+	})
+	for _, it := range sorted {
 		var rubrics []entity.RubricCriterion
 		if len(it.RubricCriteria) > 0 {
 			rubrics = it.RubricCriteria
@@ -242,12 +259,21 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 			Points: it.Points, RequiresManualGrading: it.RequiresManualGrading,
 		})
 	}
-	for _, p := range participants {
+	for _, p := range participantsSorted(participants) {
 		out.Participants = append(out.Participants, participantRow{
 			ID: p.ID, ExamID: p.ExamID, StudentID: p.StudentID, AccessCode: p.AccessCode,
 		})
 	}
 	return out
+}
+
+// participantsSorted orders the roster by participant ID — the same stable
+// key on both the bundle side and the read-back side.
+func participantsSorted(participants []entity.Participant) []entity.Participant {
+	sorted := make([]entity.Participant, len(participants))
+	copy(sorted, participants)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
+	return sorted
 }
 
 func contentHash(items []entity.Item, participants []entity.Participant, exam *entity.Exam) string {

@@ -51,16 +51,8 @@ func main() {
 
 	// Rehydrate the in-memory content cache from the persisted bundles
 	// BEFORE accepting traffic — a restart must not break the sitting flow.
-	exams, err := repo.ListExams(context.Background())
-	if err != nil {
-		log.Fatalf("startup: list exams for cache rehydrate: %v", err)
-	}
-	for _, exam := range exams {
-		if err := contentSvc.RebuildExam(context.Background(), exam.ID); err != nil {
-			log.Fatalf("startup: rebuild content cache for exam %s: %v", exam.ID, err)
-		}
-		log.Printf("rehydrated content cache for exam %s", exam.ID)
-	}
+	// Any rebuild failure aborts startup.
+	service.RehydrateAllCaches(context.Background(), repo, contentSvc)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)
@@ -77,6 +69,18 @@ func main() {
 		if err := sqlDB.Ping(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unready", "error": err.Error()})
+			return
+		}
+		// Per-exam cache readiness: a live bundle push whose post-commit
+		// rebuild failed leaves the exam unready until a retry succeeds.
+		unready := contentSvc.UnreadyExams()
+		if len(unready) > 0 {
+			causes := make(map[string]string, len(unready))
+			for id, cause := range unready {
+				causes[id] = cause.Error()
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"status": "unready", "unready_exams": causes})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
