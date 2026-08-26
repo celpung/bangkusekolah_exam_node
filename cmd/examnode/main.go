@@ -63,7 +63,15 @@ func main() {
 	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
 	internalH := handler.NewInternalHandler(bundleSvc)
-	readiness := node_router.NewReadinessRouter(contentSvc, sqlDB.Ping)
+	readiness := node_router.NewReadinessRouter(contentSvc,
+		func() (int, error) {
+			exams, err := repo.ListExams(context.Background())
+			if err != nil {
+				return 0, err
+			}
+			return len(exams), nil
+		},
+		sqlDB.Ping)
 	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
 
 	srv := &http.Server{

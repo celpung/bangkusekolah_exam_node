@@ -118,8 +118,8 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 	}
 	// Rebuild/publish the cache only after the transaction commits. If this
 	// fails the exam is marked unready: /readyz reports 503 and
-	// GetExamContent refuses to serve until a retry succeeds. The load can
-	// be safely retried: ReplaceBundle is idempotent.
+	// GetExamContent refuses to serve (ErrExamContentNotReady) until a retry
+	// succeeds. The load can be safely retried: ReplaceBundle is idempotent.
 	return s.contentSvc.RebuildExam(ctx, exam.ID)
 }
 

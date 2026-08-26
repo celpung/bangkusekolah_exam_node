@@ -62,7 +62,15 @@ func TestIntegration_ReadyzAndContentRecoverAfterUnready(t *testing.T) {
 	internalH := handler.NewInternalHandler(bundleSvc)
 
 	r := chi.NewRouter()
-	readiness := node_router.NewReadinessRouter(contentSvc, func() error { return db.Error })
+	readiness := node_router.NewReadinessRouter(contentSvc,
+		func() (int, error) {
+			exams, err := repo.ListExams(context.Background())
+			if err != nil {
+				return 0, err
+			}
+			return len(exams), nil
+		},
+		func() error { return db.Error })
 	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, readiness))
 
 	get := func(path, token string) *httptest.ResponseRecorder {

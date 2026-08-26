@@ -114,6 +114,19 @@ func (s *ContentService) UnreadyExams() map[string]error {
 	return out
 }
 
+// CacheReadyExams returns the IDs of persisted exams whose content cache has
+// been successfully built. Readiness requires this set to cover every exam
+// in the database — and at least one exam to exist.
+func (s *ContentService) CacheReadyExams() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.cache))
+	for id := range s.cache {
+		out = append(out, id)
+	}
+	return out
+}
+
 // GetExamContent returns the cached content for exactly the requested exam.
 // A mismatched or unbuilt exam is an error — never another exam's content.
 // An exam whose latest rebuild failed is refused with ErrExamContentNotReady:
