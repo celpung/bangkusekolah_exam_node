@@ -158,16 +158,22 @@ func (s *BundleService) Preflight(ctx context.Context, examID string, expectedIt
 // contentHash hashes every field that determines what students see and how
 // answers are graded: prompts, options, answer keys, rubrics, question types,
 // ordering, manual-grading flags, points, roster codes, and exam settings.
-// examHashView is the exam's stable settings subset — everything that
-// determines the sitting except volatile bookkeeping (loaded_at, content hash).
+// examHashView is the exam's stable settings subset — every persisted exam
+// field that shapes the sitting, minus volatile bookkeeping (loaded_at,
+// bundle_checksum, content_hash itself).
 type examHashView struct {
 	ID                    string                           `json:"id"`
 	DeploymentID          string                           `json:"deployment_id"`
 	Title                 string                           `json:"title"`
+	Instruction           *string                          `json:"instruction"`
 	StartsAt              int64                            `json:"starts_at"`
 	EndsAt                int64                            `json:"ends_at"`
 	DurationMinutes       int                              `json:"duration_minutes"`
 	MaxAttempts           int                              `json:"max_attempts"`
+	ShuffleQuestions      bool                             `json:"shuffle_questions"`
+	ShuffleOptions        bool                             `json:"shuffle_options"`
+	ShowResultImmediately bool                             `json:"show_result_immediately"`
+	PassingScore          *float64                         `json:"passing_score"`
 	ResultSelectionPolicy entity.ExamResultSelectionPolicy `json:"result_selection_policy"`
 	MaxScore              float64                          `json:"max_score"`
 	HasManualItems        bool                             `json:"has_manual_items"`
@@ -182,6 +188,8 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 		ID                    string                   `json:"id"`
 		ExamID                string                   `json:"exam_id"`
 		SectionID             string                   `json:"section_id"`
+		SectionTitle          string                   `json:"section_title"`
+		SectionSortOrder      int                      `json:"section_sort_order"`
 		SortOrder             int                      `json:"sort_order"`
 		QuestionType          entity.QuestionType      `json:"question_type"`
 		PromptSnapshot        string                   `json:"prompt_snapshot"`
@@ -202,9 +210,13 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 		Items        []itemRow        `json:"items"`
 		Participants []participantRow `json:"participants"`
 	}{Exam: examHashView{
-		ID: exam.ID, DeploymentID: exam.DeploymentID, Title: exam.Title,
+		ID: exam.ID, DeploymentID: exam.DeploymentID, Title: exam.Title, Instruction: exam.Instruction,
 		StartsAt: exam.StartsAt.UTC().Truncate(time.Second).Unix(), EndsAt: exam.EndsAt.UTC().Truncate(time.Second).Unix(), DurationMinutes: exam.DurationMinutes,
 		MaxAttempts:           exam.MaxAttempts,
+		ShuffleQuestions:      exam.ShuffleQuestions,
+		ShuffleOptions:        exam.ShuffleOptions,
+		ShowResultImmediately: exam.ShowResultImmediately,
+		PassingScore:          exam.PassingScore,
 		ResultSelectionPolicy: entity.ExamResultSelectionPolicy(exam.ResultSelectionPolicy),
 		MaxScore:              exam.MaxScore, HasManualItems: exam.HasManualItems, AccessCodePrefix: exam.AccessCodePrefix,
 	}}
@@ -223,6 +235,7 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 		}
 		out.Items = append(out.Items, itemRow{
 			ID: it.ID, ExamID: it.ExamID, SectionID: it.SectionID,
+			SectionTitle: it.SectionTitle, SectionSortOrder: it.SectionSortOrder,
 			SortOrder: it.SortOrder, QuestionType: it.QuestionType,
 			PromptSnapshot: it.PromptSnapshot, OptionsSnapshotJSON: options,
 			AnswerKeySnapshotJSON: answerKey, RubricCriteria: rubrics,
@@ -234,11 +247,6 @@ func contentHashView(items []entity.Item, participants []entity.Participant, exa
 			ID: p.ID, ExamID: p.ExamID, StudentID: p.StudentID, AccessCode: p.AccessCode,
 		})
 	}
-	b, err := json.Marshal(out)
-	if err != nil {
-		return nil
-	}
-	_ = b
 	return out
 }
 
@@ -250,6 +258,12 @@ func contentHash(items []entity.Item, participants []entity.Participant, exam *e
 	}
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// ContentHash exposes the canonical content hash so external callers (the
+// preflight CLI) verify stored rows against what LoadBundle recorded.
+func ContentHash(items []entity.Item, participants []entity.Participant, exam *entity.Exam) string {
+	return contentHash(items, participants, exam)
 }
 
 func sectionTitle(sections []inbound.ExamNodeBundleSection, id string) string {
