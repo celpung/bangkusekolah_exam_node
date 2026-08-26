@@ -4,13 +4,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/model"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
@@ -108,22 +108,41 @@ func resetIntegrityDB(t *testing.T, db *gorm.DB, examsTable bool) *gorm.DB {
 	return db
 }
 
+// cleanupIntegrityTables truncates the tables each integrity test writes, so
+// every run starts from a clean state. Errors are fatal — a failed cleanup
+// would poison the assertions below.
+func cleanupIntegrityTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec("SET FOREIGN_KEY_CHECKS = 0").Error; err != nil {
+		t.Fatalf("disable fk checks: %v", err)
+	}
+	for _, tbl := range []string{"integrity_events", "attempts"} {
+		if err := db.Exec("TRUNCATE TABLE `" + tbl + "`").Error; err != nil {
+			t.Fatalf("truncate %s: %v", tbl, err)
+		}
+	}
+	if err := db.Exec("SET FOREIGN_KEY_CHECKS = 1").Error; err != nil {
+		t.Fatalf("enable fk checks: %v", err)
+	}
+}
+
 // TestIntegration_IntegrityRateLimitAtomic pins BLOCKER-2: 15 simultaneous
-// events on one attempt must store exactly 10 — no more.
+// events with unique types on one attempt must store at most 10 — the rest
+// must be rejected as flood. stored + floods == workers.
 func TestIntegration_IntegrityRateLimitAtomic(t *testing.T) {
 	db := testDBForIntegrity(t)
 	resetIntegrityDB(t, db, false)
+	cleanupIntegrityTables(t, db)
 	repo := repository.NewNodeRepository(db)
 	txManager := helper.NewTxManager(db)
 	svc := NewIntegrityService(repo, txManager, &concurrentIDGen{})
 
-	now := gormNow()
+	attemptID := "att-rate-" + uuid.NewString()[:8] // unique per run
 	if err := db.Exec(`INSERT INTO attempts (id, participant_id, student_id, exam_id, attempt_no, status, started_at, due_at, max_score, grading_status)
 		VALUES (?, ?, ?, ?, 1, 'in_progress', NOW(), DATE_ADD(NOW(), INTERVAL 1 HOUR), 100, 'pending')`,
-		"att-int", "part-1", "stu-1", "exam-a").Error; err != nil {
+		attemptID, "part-1", "stu-1", "exam-a").Error; err != nil {
 		t.Fatalf("seed attempt: %v", err)
 	}
-	_ = now
 
 	const workers = 15
 	var wg sync.WaitGroup
@@ -132,8 +151,10 @@ func TestIntegration_IntegrityRateLimitAtomic(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(idx int) {
 			defer wg.Done()
-			evType := fmt.Sprintf("focus_lost_%d", idx%2) // two types to dodge dedup
-			_, results[idx] = svc.RecordEvent(context.Background(), "att-int", "part-1", evType, nil, nil)
+			// unique event type per worker so dedup cannot interfere —
+			// this test measures only the rate limit.
+			evType := fmt.Sprintf("focus_lost_%d", idx)
+			_, results[idx] = svc.RecordEvent(context.Background(), attemptID, "part-1", evType, nil, nil)
 		}(i)
 	}
 	wg.Wait()
@@ -143,21 +164,24 @@ func TestIntegration_IntegrityRateLimitAtomic(t *testing.T) {
 		if err == nil {
 			continue
 		}
-		if err == node_error.ErrIntegrityFlood || strings.Contains(err.Error(), "too many") {
+		if errors.Is(err, node_error.ErrIntegrityFlood) || strings.Contains(err.Error(), "too many") {
 			floods++
 		} else {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 	var stored int64
-	if err := db.Raw("SELECT COUNT(*) FROM integrity_events WHERE attempt_id = ?", "att-int").Scan(&stored).Error; err != nil {
+	if err := db.Raw("SELECT COUNT(*) FROM integrity_events WHERE attempt_id = ?", attemptID).Scan(&stored).Error; err != nil {
 		t.Fatalf("count stored: %v", err)
 	}
 	if stored > 10 {
 		t.Fatalf("rate limit breached atomically: %d events stored, want <=10 (floods=%d)", stored, floods)
 	}
-	if floods == 0 && stored != 10 {
-		t.Fatalf("expected some flood rejections or exactly 10, got %d stored / %d floods", stored, floods)
+	if stored+int64(floods) != workers {
+		t.Fatalf("invariant broken: stored(%d) + floods(%d) != workers(%d)", stored, floods, workers)
+	}
+	if stored < 10 {
+		t.Fatalf("expected close to 10 accepted under contention, got %d (floods=%d)", stored, floods)
 	}
 }
 
@@ -166,13 +190,15 @@ func TestIntegration_IntegrityRateLimitAtomic(t *testing.T) {
 func TestIntegration_IntegrityDedupAtomic(t *testing.T) {
 	db := testDBForIntegrity(t)
 	resetIntegrityDB(t, db, true)
+	cleanupIntegrityTables(t, db)
 	repo := repository.NewNodeRepository(db)
 	txManager := helper.NewTxManager(db)
 	svc := NewIntegrityService(repo, txManager, &concurrentIDGen{})
 
+	attemptID := "att-dedup-" + uuid.NewString()[:8] // unique per run
 	if err := db.Exec(`INSERT INTO attempts (id, participant_id, student_id, exam_id, attempt_no, status, started_at, due_at, max_score, grading_status)
 		VALUES (?, ?, ?, ?, 1, 'in_progress', NOW(), DATE_ADD(NOW(), INTERVAL 1 HOUR), 100, 'pending')`,
-		"att-dedup", "part-d", "stu-d", "exam-a").Error; err != nil {
+		attemptID, "part-d", "stu-d", "exam-a").Error; err != nil {
 		t.Fatalf("seed attempt: %v", err)
 	}
 
@@ -182,20 +208,16 @@ func TestIntegration_IntegrityDedupAtomic(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = svc.RecordEvent(context.Background(), "att-dedup", "part-d", "focus_lost", nil, nil)
+			_, _ = svc.RecordEvent(context.Background(), attemptID, "part-d", "focus_lost", nil, nil)
 		}()
 	}
 	wg.Wait()
 
 	var stored int64
-	if err := db.Raw("SELECT COUNT(*) FROM integrity_events WHERE attempt_id = ? AND event_type = ?", "att-dedup", "focus_lost").Scan(&stored).Error; err != nil {
+	if err := db.Raw("SELECT COUNT(*) FROM integrity_events WHERE attempt_id = ? AND event_type = ?", attemptID, "focus_lost").Scan(&stored).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if stored != 1 {
 		t.Fatalf("dedup collapsed to %d rows, want exactly 1", stored)
 	}
 }
-
-func gormNow() model.Attempt { return model.Attempt{} }
-
-var _ = uuid.NewString
