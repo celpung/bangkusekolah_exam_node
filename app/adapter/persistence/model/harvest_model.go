@@ -8,6 +8,7 @@ import "time"
 type HarvestLog struct {
 	ID            int64      `gorm:"primaryKey;autoIncrement"`
 	AttemptID     string     `gorm:"type:varchar(36);not null;index:idx_harvest_attempt"`
+	DeploymentID  string     `gorm:"type:varchar(36);not null;default:''"`
 	PushedAt      time.Time  `gorm:"type:datetime;not null"`
 	AckedAt       *time.Time `gorm:"type:datetime"`
 	AttemptsCount int        `gorm:"not null;default:0"`

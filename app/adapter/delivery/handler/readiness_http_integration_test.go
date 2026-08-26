@@ -200,6 +200,6 @@ func mustExec(t *testing.T, db *gorm.DB, q string) {
 // exercise the push path.
 type testPusherOK struct{}
 
-func (testPusherOK) Push(_ context.Context, _ inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error) {
+func (testPusherOK) Push(_ context.Context, _ string, _ inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error) {
 	return &inbound.ExamNodeIngestResult{}, nil
 }

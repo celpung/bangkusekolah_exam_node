@@ -33,7 +33,7 @@ func TestHarvestClientSendsAuthAndDecodesAck(t *testing.T) {
 	defer server.Close()
 
 	client := NewHarvestClient(testCfg(server.URL))
-	result, err := client.Push(context.Background(), inbound.ExamNodeAttemptBatch{
+	result, err := client.Push(context.Background(), "dep-1", inbound.ExamNodeAttemptBatch{
 		Attempts: []inbound.ExamNodeAttemptPayload{{ID: "att-9", Status: "submitted"}},
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestHarvestClientFailsOnNonOKStatus(t *testing.T) {
 	defer server.Close()
 
 	client := NewHarvestClient(testCfg(server.URL))
-	if _, err := client.Push(context.Background(), inbound.ExamNodeAttemptBatch{}); err == nil {
+	if _, err := client.Push(context.Background(), "dep-1", inbound.ExamNodeAttemptBatch{}); err == nil {
 		t.Fatal("expected non-OK status to surface as an error")
 	}
 }

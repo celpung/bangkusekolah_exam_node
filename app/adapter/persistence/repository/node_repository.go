@@ -311,21 +311,28 @@ func (r *nodeRepository) ListUnpushedAttempts(ctx context.Context) ([]entity.Att
 	return entities, nil
 }
 
-func (r *nodeRepository) MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) error {
+func (r *nodeRepository) MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) (int, error) {
 	if len(ids) == 0 {
-		return nil
+		return 0, nil
 	}
 	db := helper.GetDB(ctx, r.db)
-	if err := db.Model(&model.Attempt{}).Where("id IN ?", ids).Update("harvested_at", at).Error; err != nil {
-		return fmt.Errorf("mark attempts harvested: %w", err)
+	res := db.Model(&model.Attempt{}).
+		Where("id IN ? AND status IN (?,?) AND harvested_at IS NULL", ids,
+			string(entity.AttemptSubmitted), string(entity.AttemptAutoSubmitted)).
+		Update("harvested_at", at)
+	if res.Error != nil {
+		return 0, fmt.Errorf("mark attempts harvested: %w", res.Error)
 	}
-	return nil
+	return int(res.RowsAffected), nil
 }
 
-func (r *nodeRepository) LogHarvestFailure(ctx context.Context, attemptID, errMsg string) error {
+func (r *nodeRepository) LogHarvestFailure(ctx context.Context, attemptID, deploymentID string, attemptsCount int, errMsg string) error {
 	db := helper.GetDB(ctx, r.db)
 	msg := errMsg
-	if err := db.Create(&model.HarvestLog{AttemptID: attemptID, PushedAt: time.Now().UTC(), LastError: &msg}).Error; err != nil {
+	if err := db.Create(&model.HarvestLog{
+		AttemptID: attemptID, DeploymentID: deploymentID,
+		PushedAt: time.Now().UTC(), AttemptsCount: attemptsCount, LastError: &msg,
+	}).Error; err != nil {
 		return fmt.Errorf("log harvest failure: %w", err)
 	}
 	return nil

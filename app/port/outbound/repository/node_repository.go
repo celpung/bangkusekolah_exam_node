@@ -42,7 +42,7 @@ type NodeRepository interface {
 
 	// Harvest cursor operations (Task 20).
 	ListUnpushedAttempts(ctx context.Context) ([]entity.Attempt, error)
-	MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) error
-	LogHarvestFailure(ctx context.Context, attemptID string, errMsg string) error
+	MarkAttemptsHarvested(ctx context.Context, ids []string, at time.Time) (int, error)
+	LogHarvestFailure(ctx context.Context, attemptID, deploymentID string, attemptsCount int, errMsg string) error
 	ListIntegrityEventsByAttempt(ctx context.Context, attemptID string) ([]entity.IntegrityEvent, error)
 }

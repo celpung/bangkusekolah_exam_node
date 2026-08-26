@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
@@ -33,13 +34,19 @@ func NewHarvestClient(cfg *config.Config) *HarvestClient {
 	}
 }
 
-// Push posts one batch and returns central's per-attempt acknowledgement.
-func (c *HarvestClient) Push(ctx context.Context, batch inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error) {
+// Push posts one batch scoped to a single deployment and returns central's
+// per-attempt acknowledgement. Trailing slashes in CentralBaseURL are
+// normalized so the path never becomes "//api/...".
+func (c *HarvestClient) Push(ctx context.Context, deploymentID string, batch inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error) {
+	if deploymentID == "" {
+		return nil, fmt.Errorf("harvest push: empty deployment ID")
+	}
 	raw, err := json.Marshal(batch)
 	if err != nil {
 		return nil, fmt.Errorf("marshal batch: %w", err)
 	}
-	url := fmt.Sprintf("%s/api/v1/exam-nodes/deployments/%s/attempts", c.baseURL, c.deploymentID)
+	base := strings.TrimRight(c.baseURL, "/")
+	url := fmt.Sprintf("%s/api/v1/exam-nodes/deployments/%s/attempts", base, deploymentID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
