@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -47,6 +48,19 @@ func main() {
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
 	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
 	bundleSvc := service.NewBundleService(repo, txManager, contentSvc)
+
+	// Rehydrate the in-memory content cache from the persisted bundles
+	// BEFORE accepting traffic — a restart must not break the sitting flow.
+	exams, err := repo.ListExams(context.Background())
+	if err != nil {
+		log.Fatalf("startup: list exams for cache rehydrate: %v", err)
+	}
+	for _, exam := range exams {
+		if err := contentSvc.RebuildExam(context.Background(), exam.ID); err != nil {
+			log.Fatalf("startup: rebuild content cache for exam %s: %v", exam.ID, err)
+		}
+		log.Printf("rehydrated content cache for exam %s", exam.ID)
+	}
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)

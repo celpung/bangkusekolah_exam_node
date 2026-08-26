@@ -90,43 +90,48 @@ func main() {
 		if err != nil {
 			fail("list participants for %s: %v", exam.ID, err)
 		}
-		itemCount, partCount := len(items), len(participants)
 
-		// Full BundleService.Preflight: content-hash verification against the
-		// load-time rows plus structural checks.
+		// Full BundleService.Preflight when deployment expectations exist
+		// (counts + content hash); structural + content-hash checks otherwise.
 		if expect, ok := expects.Exams[exam.ID]; ok {
 			if err := bundleSvc.Preflight(ctx, exam.ID, expect.ItemCount, expect.ParticipantCount); err != nil {
 				fail("preflight exam %s vs deployment: %v", exam.ID, err)
 			}
-			continue
+		} else {
+			if len(items) == 0 {
+				fail("exam %s has no items", exam.ID)
+			}
+			if len(participants) == 0 {
+				fail("exam %s has no participants", exam.ID)
+			}
+			if exam.BundleChecksum == "" {
+				fail("exam %s has no bundle checksum", exam.ID)
+			}
+			if recomputed := service.ContentHash(items, participants, &exam); recomputed != exam.ContentHash {
+				fail("exam %s stored content hash %q does not match rows (%q)", exam.ID, exam.ContentHash, recomputed)
+			}
 		}
 
-		// Without deployment expectations, verify structure + content hash
-		// against what LoadBundle recorded (counts are self-consistent).
-		if itemCount == 0 {
-			fail("exam %s has no items", exam.ID)
+		// Cache readiness applies to BOTH branches: a DB-committed but never-
+		// rebuilt bundle must not pass readiness — students would get
+		// ErrExamNotLoaded at login time. Preflight rebuilds from the same
+		// persisted rows the running node serves, so success here proves the
+		// rows are cacheable and (with examnode's startup rehydrate) that the
+		// live node will have rebuilt its own cache before accepting traffic.
+		if err := contentSvc.RebuildExam(ctx, exam.ID); err != nil {
+			fail("exam %s content cache cannot be rebuilt: %v", exam.ID, err)
 		}
-		if partCount == 0 {
-			fail("exam %s has no participants", exam.ID)
-		}
-		if exam.BundleChecksum == "" {
-			fail("exam %s has no bundle checksum", exam.ID)
-		}
-		if recomputed := service.ContentHash(items, participants, &exam); recomputed != exam.ContentHash {
-			fail("exam %s stored content hash %q does not match rows (%q)", exam.ID, exam.ContentHash, recomputed)
-		}
-
-		// Cache readiness: a DB-committed but never-rebuilt bundle must not
-		// pass readiness — students would get ErrExamNotLoaded at login time.
 		if _, _, _, _, err := contentSvc.GetExamContent(ctx, exam.ID); err != nil {
-			fail("exam %s content cache not ready (rebuild failed or not run): %v", exam.ID, err)
+			fail("exam %s content cache not ready after rebuild: %v", exam.ID, err)
 		}
 	}
 
 	if free := diskFree("."); free < minDiskFreeBytes {
 		fail("disk free %d bytes, want >%d", free, minDiskFreeBytes)
 	}
-	if offset := clockSkewEstimate(cfg); offset > maxClockOffset {
+	if offset, err := clockOffset(cfg); err != nil {
+		fail("clock check: %v", err)
+	} else if offset > maxClockOffset {
 		fail("clock offset ~%v, want <%v", offset.Round(time.Millisecond), maxClockOffset)
 	}
 	fmt.Println("PASS")
@@ -145,29 +150,32 @@ func diskFree(path string) uint64 {
 	return st.Bavail * uint64(st.Bsize)
 }
 
-// clockSkewEstimate compares local time against the Date header of a HEAD
-// request to central — no NTP port needed on locked-down VPS networks.
-func clockSkewEstimate(cfg *config.Config) time.Duration {
+// clockOffset compares local time against the Date header of a HEAD request
+// to central's /health endpoint — no NTP port needed on locked-down VPS
+// networks. Fail-closed: unreachable central, a missing Date header, or an
+// unparseable timestamp returns an error so the go/no-go gate blocks instead
+// of treating an unknown offset as perfect.
+func clockOffset(cfg *config.Config) (time.Duration, error) {
 	if cfg.CentralBaseURL == "" {
-		return 0
+		return 0, fmt.Errorf("CENTRAL_BASE_URL not configured — no clock source")
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Head(cfg.CentralBaseURL + "/healthz")
+	resp, err := client.Head(cfg.CentralBaseURL + "/health")
 	if err != nil {
-		return 0 // unreachable central is not a clock problem; harvest will report it
+		return 0, fmt.Errorf("central unreachable for clock check: %w", err)
 	}
 	defer resp.Body.Close()
 	dateHeader := resp.Header.Get("Date")
 	if dateHeader == "" {
-		return 0
+		return 0, fmt.Errorf("central response has no Date header")
 	}
 	central, err := http.ParseTime(dateHeader)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("central Date header unparseable %q: %w", dateHeader, err)
 	}
 	offset := time.Since(central)
 	if offset < 0 {
 		offset = -offset
 	}
-	return offset
+	return offset, nil
 }
