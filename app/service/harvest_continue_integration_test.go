@@ -103,8 +103,12 @@ func TestIntegration_HarvestContinuesAfterDeploymentFailure(t *testing.T) {
 
 	// dep-B attempt is harvested; dep-A attempt remains unharvested.
 	var bMarked, aUnharvested int
-	db.Raw(`SELECT COUNT(*) FROM attempts WHERE id = 'att-ok-b' AND harvested_at IS NOT NULL`).Scan(&bMarked)
-	db.Raw(`SELECT COUNT(*) FROM attempts WHERE id = 'att-fail-a' AND harvested_at IS NULL`).Scan(&aUnharvested)
+	if err := db.Raw(`SELECT COUNT(*) FROM attempts WHERE id = 'att-ok-b' AND harvested_at IS NOT NULL`).Scan(&bMarked).Error; err != nil {
+		t.Fatalf("scan bMarked: %v", err)
+	}
+	if err := db.Raw(`SELECT COUNT(*) FROM attempts WHERE id = 'att-fail-a' AND harvested_at IS NULL`).Scan(&aUnharvested).Error; err != nil {
+		t.Fatalf("scan aUnharvested: %v", err)
+	}
 	if bMarked != 1 {
 		t.Fatalf("dep-B harvested=%d, want 1", bMarked)
 	}

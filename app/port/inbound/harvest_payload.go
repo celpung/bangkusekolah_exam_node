@@ -29,7 +29,6 @@ type ExamNodeIntegrityEventPayload struct {
 
 type ExamNodeAttemptPayload struct {
 	ID              string                          `json:"id"`
-	DeploymentID    string                          `json:"deployment_id"`
 	ParticipantID   string                          `json:"participant_id"`
 	StudentID       string                          `json:"student_id"`
 	AttemptNo       int                             `json:"attempt_no"`

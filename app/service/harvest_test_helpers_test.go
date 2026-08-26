@@ -19,11 +19,12 @@ import (
 
 type fakeHarvestRepo struct {
 	outbound_repository.NodeRepository
-	attempts map[string]*entity.Attempt
-	exams    map[string]*entity.Exam
-	answers  map[string][]entity.Answer
-	events   map[string][]entity.IntegrityEvent
-	pushLog  []string // failure log entries "attempt|dep|count|err"
+	attempts  map[string]*entity.Attempt
+	exams     map[string]*entity.Exam
+	answers   map[string][]entity.Answer
+	events    map[string][]entity.IntegrityEvent
+	pushLog   []string // failure log entries "attempt|dep|count|err"
+	markCalls int      // counts MarkAttemptsHarvested invocations
 }
 
 func (f *fakeHarvestRepo) ListUnpushedAttempts(_ context.Context) ([]entity.Attempt, error) {
@@ -52,6 +53,7 @@ func (f *fakeHarvestRepo) ListIntegrityEventsByAttempt(_ context.Context, id str
 }
 
 func (f *fakeHarvestRepo) MarkAttemptsHarvested(_ context.Context, ids []string, at time.Time) (int, error) {
+	f.markCalls++
 	marked := 0
 	for _, id := range ids {
 		if a, ok := f.attempts[id]; ok && a.HarvestedAt == nil &&

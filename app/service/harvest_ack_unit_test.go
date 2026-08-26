@@ -42,8 +42,11 @@ func TestDrainOnceDedupesAndIgnoresUnknownAcks(t *testing.T) {
 	if repo.attempts["att-1"].HarvestedAt == nil {
 		t.Fatal("att-1 should be marked")
 	}
-	// Prove "marked exactly once": MarkAttemptsHarvested was called with a
-	// single-element slice (deduplicated), not [att-1, att-1].
+	// Prove "marked exactly once": MarkAttemptsHarvested was called exactly
+	// once (not twice for the duplicate ID).
+	if repo.markCalls != 1 {
+		t.Fatalf("MarkAttemptsHarvested called %d times, want 1", repo.markCalls)
+	}
 	if len(repo.pushLog) > 0 {
 		t.Fatalf("no harvest_log entries expected for successful drain, got %v", repo.pushLog)
 	}

@@ -145,7 +145,7 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 			return 0, err
 		}
 		payload := inbound.ExamNodeAttemptPayload{
-			ID: att.ID, DeploymentID: deploymentID, ParticipantID: att.ParticipantID, StudentID: att.StudentID,
+			ID: att.ID, ParticipantID: att.ParticipantID, StudentID: att.StudentID,
 			AttemptNo: att.AttemptNo, Status: entity.AttemptStatus(att.Status),
 			StartedAt: att.StartedAt, DueAt: att.DueAt,
 			SubmittedAt: att.SubmittedAt, AutoSubmittedAt: att.AutoSubmittedAt,
