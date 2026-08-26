@@ -259,6 +259,80 @@ func (r *nodeRepository) listItemsWhere(ctx context.Context, where string, args 
 	return entities, nil
 }
 
+func (r *nodeRepository) ListParticipants(ctx context.Context) ([]entity.Participant, error) {
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Participant
+	if err := db.Order("student_name ASC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list participants: %w", err)
+	}
+	entities := make([]entity.Participant, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToParticipantEntity(&models[i])
+	}
+	return entities, nil
+}
+
+func (r *nodeRepository) CreateExam(ctx context.Context, exam *entity.Exam) error {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToExamModel(exam)
+	if m == nil {
+		return fmt.Errorf("nil exam")
+	}
+	return db.Create(m).Error
+}
+
+// ReplaceBundle swaps one exam's bundle: delete the exam's old rows, then
+// bulk-insert the new set. BundleService wraps this in txManager.Atomic.
+func (r *nodeRepository) ReplaceBundle(ctx context.Context, exam *entity.Exam, items []entity.Item, participants []entity.Participant) error {
+	db := helper.GetDB(ctx, r.db)
+	mExam := mapper.ToExamModel(exam)
+	if mExam == nil {
+		return fmt.Errorf("nil exam in bundle")
+	}
+	// delete old rows for this exam, then bulk-insert the new set
+	if err := db.Where("exam_id = ?", exam.ID).Delete(&model.Item{}).Error; err != nil {
+		return fmt.Errorf("clear old items: %w", err)
+	}
+	if err := db.Where("id = ?", exam.ID).Delete(&model.Exam{}).Error; err != nil {
+		return fmt.Errorf("clear old exam: %w", err)
+	}
+	if len(items) > 0 {
+		mItems := make([]model.Item, len(items))
+		for i := range items {
+			mItems[i] = *mapper.ToItemModel(&items[i])
+		}
+		if err := db.Create(&mItems).Error; err != nil {
+			return fmt.Errorf("insert items: %w", err)
+		}
+	}
+	if len(participants) > 0 {
+		mParts := make([]model.Participant, len(participants))
+		for i := range participants {
+			mParts[i] = *mapper.ToParticipantModel(&participants[i])
+		}
+		if err := db.Create(&mParts).Error; err != nil {
+			return fmt.Errorf("insert participants: %w", err)
+		}
+	}
+	if err := db.Create(mExam).Error; err != nil {
+		return fmt.Errorf("insert exam: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeRepository) ListExams(ctx context.Context) ([]entity.Exam, error) {
+	db := helper.GetDB(ctx, r.db)
+	var models []model.Exam
+	if err := db.Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list exams: %w", err)
+	}
+	entities := make([]entity.Exam, len(models))
+	for i := range models {
+		entities[i] = *mapper.ToExamEntity(&models[i])
+	}
+	return entities, nil
+}
+
 func (r *nodeRepository) FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Attempt

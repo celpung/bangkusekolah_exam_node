@@ -2,6 +2,7 @@ package mapper
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/model"
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
@@ -20,11 +21,32 @@ func ToExamEntity(m *model.Exam) *entity.Exam {
 	}
 }
 
+func ToExamModel(e *entity.Exam) *model.Exam {
+	if e == nil {
+		return nil
+	}
+	return &model.Exam{
+		ID: e.ID, DeploymentID: e.DeploymentID, Title: e.Title, Instruction: e.Instruction,
+		StartsAt: e.StartsAt, EndsAt: e.EndsAt, DurationMinutes: e.DurationMinutes, MaxAttempts: e.MaxAttempts,
+		ShuffleQuestions: e.ShuffleQuestions, ShuffleOptions: e.ShuffleOptions, ShowResultImmediately: e.ShowResultImmediately,
+		PassingScore: e.PassingScore, ResultSelectionPolicy: e.ResultSelectionPolicy, MaxScore: e.MaxScore,
+		HasManualItems: e.HasManualItems, AccessCodePrefix: e.AccessCodePrefix, BundleChecksum: e.BundleChecksum,
+		LoadedAt: time.Now(),
+	}
+}
+
 func ToParticipantEntity(m *model.Participant) *entity.Participant {
 	if m == nil {
 		return nil
 	}
 	return &entity.Participant{ID: m.ID, StudentID: m.StudentID, StudentName: m.StudentName, AccessCode: m.AccessCode, AttemptCount: m.AttemptCount, LatestAttemptID: m.LatestAttemptID}
+}
+
+func ToParticipantModel(e *entity.Participant) *model.Participant {
+	if e == nil {
+		return nil
+	}
+	return &model.Participant{ID: e.ID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode}
 }
 
 func ToAttemptEntity(m *model.Attempt) *entity.Attempt {
@@ -109,4 +131,38 @@ func ToItemEntity(m *model.Item) *entity.Item {
 		_ = json.Unmarshal([]byte(*m.RubricCriteriaJSON), &rubrics)
 	}
 	return &entity.Item{ID: m.ID, ExamID: m.ExamID, SectionID: m.SectionID, SectionTitle: m.SectionTitle, SectionSortOrder: m.SectionSortOrder, SortOrder: m.SortOrder, QuestionType: entity.QuestionType(m.QuestionType), PromptSnapshot: m.PromptSnapshot, OptionsSnapshotJSON: opts, AnswerKeySnapshotJSON: key, RubricCriteria: rubrics, Points: m.Points, RequiresManualGrading: m.RequiresManualGrading}
+}
+
+func ToItemModel(e *entity.Item) *model.Item {
+	if e == nil {
+		return nil
+	}
+	var opts *string
+	var key *string
+	var rubrics *string
+	if len(e.OptionsSnapshotJSON) > 0 {
+		if b, err := json.Marshal(e.OptionsSnapshotJSON); err == nil {
+			s := string(b)
+			opts = &s
+		}
+	}
+	if e.AnswerKeySnapshotJSON != nil {
+		if b, err := json.Marshal(e.AnswerKeySnapshotJSON); err == nil {
+			s := string(b)
+			key = &s
+		}
+	}
+	if len(e.RubricCriteria) > 0 {
+		if b, err := json.Marshal(e.RubricCriteria); err == nil {
+			s := string(b)
+			rubrics = &s
+		}
+	}
+	return &model.Item{
+		ID: e.ID, ExamID: e.ExamID, SectionID: e.SectionID, SectionTitle: e.SectionTitle,
+		SectionSortOrder: e.SectionSortOrder, SortOrder: e.SortOrder,
+		QuestionType: string(e.QuestionType), PromptSnapshot: e.PromptSnapshot,
+		OptionsSnapshotJSON: opts, AnswerKeySnapshotJSON: key, RubricCriteriaJSON: rubrics,
+		Points: e.Points, RequiresManualGrading: e.RequiresManualGrading,
+	}
 }

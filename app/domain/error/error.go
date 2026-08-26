@@ -19,5 +19,7 @@ var (
 	ErrResultNotAvailable    = errors.New("exam result is not available yet")
 	ErrIntegrityFlood        = errors.New("too many integrity events for this attempt")
 	ErrBundleChecksum        = errors.New("bundle checksum does not match its content")
+	ErrBundleFileUpload      = errors.New("file_upload items are not supported on the node")
+	ErrPreflightFailed       = errors.New("node preflight checks failed")
 	ErrRepositoryUnavailable = errors.New("repository unavailable")
 )

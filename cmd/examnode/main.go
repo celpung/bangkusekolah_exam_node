@@ -11,7 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
-	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/handler"
+	node_router "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/router"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/provider"
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository"
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
@@ -40,6 +41,7 @@ func main() {
 	contentSvc := service.NewContentService(repo)
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
 	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
+	bundleSvc := service.NewBundleService(repo, txManager, contentSvc)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RealIP)
@@ -62,8 +64,8 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
 
-	// Student sitting flow: JWT auth + cached content + attempt state.
-	r.Mount("/api/v1/student", router.NewStudentRouter(issuer, contentSvc, attemptSvc, integritySvc))
+	internalH := handler.NewInternalHandler(bundleSvc)
+	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,

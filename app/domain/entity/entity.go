@@ -4,6 +4,19 @@ import "time"
 
 type QuestionType string
 
+// ExamQuestionType mirrors central's question type name so bundle JSON decodes
+// without a conversion layer.
+type ExamQuestionType = QuestionType
+
+// ExamResultSelectionPolicy mirrors central's policy type so the bundle JSON
+// decodes without a conversion layer.
+type ExamResultSelectionPolicy string
+
+const (
+	ResultSelectionBest   ExamResultSelectionPolicy = "best"
+	ResultSelectionLatest ExamResultSelectionPolicy = "latest"
+)
+
 const (
 	QuestionSingleChoice   QuestionType = "single_choice"
 	QuestionMultipleChoice QuestionType = "multiple_choice"

@@ -11,19 +11,36 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
 )
 
-// NewStudentRouter mounts the student sitting flow under the JWT middleware.
-// Content is keyed by exam (multi-exam per VPS); attempts and integrity are
-// scoped by the attemptId path param plus the JWT participant id.
-func NewStudentRouter(issuer outbound.JWTIssuer, contentUC inbound.ContentUsecase, attemptUC inbound.AttemptUsecase, integrityUC inbound.IntegrityUsecase) http.Handler {
+// NewRouter assembles the full node HTTP surface: the student sitting flow
+// under the JWT middleware and internal central→node routes under the shared
+// node token.
+func NewRouter(
+	issuer outbound.JWTIssuer,
+	nodeToken string,
+	contentUC inbound.ContentUsecase,
+	attemptUC inbound.AttemptUsecase,
+	integrityUC inbound.IntegrityUsecase,
+	internalHandler *handler.InternalHandler,
+) http.Handler {
 	r := chi.NewRouter()
+
 	r.Route("/api/v1/student", func(r chi.Router) {
 		r.Use(node_middleware.AuthMiddleware(issuer))
-		r.Get("/exams/{examId}/content", handler.NewExamHandler(contentUC).GetContent)
-		r.Get("/exam-attempts/{attemptId}", handler.NewAttemptHandler(attemptUC, integrityUC).GetState)
-		r.Put("/exam-attempts/{attemptId}/answers/{itemId}", handler.NewAttemptHandler(attemptUC, integrityUC).Autosave)
-		r.Post("/exam-attempts/{attemptId}/submit", handler.NewAttemptHandler(attemptUC, integrityUC).Submit)
-		r.Get("/exams/{examId}/result", handler.NewAttemptHandler(attemptUC, integrityUC).GetResult)
-		r.Post("/exam-attempts/{attemptId}/integrity-events", handler.NewAttemptHandler(attemptUC, integrityUC).RecordIntegrity)
+		examH := handler.NewExamHandler(contentUC)
+		attemptH := handler.NewAttemptHandler(attemptUC, integrityUC)
+		r.Get("/exams/{examId}/content", examH.GetContent)
+		r.Get("/exams/{examId}/result", attemptH.GetResult)
+		r.Get("/exam-attempts/{attemptId}", attemptH.GetState)
+		r.Put("/exam-attempts/{attemptId}/answers/{itemId}", attemptH.Autosave)
+		r.Post("/exam-attempts/{attemptId}/submit", attemptH.Submit)
+		r.Post("/exam-attempts/{attemptId}/integrity-events", attemptH.RecordIntegrity)
 	})
+
+	r.Route("/internal/v1", func(r chi.Router) {
+		r.Use(node_middleware.NodeTokenAuth(nodeToken))
+		r.Post("/bundle", internalHandler.PushBundle)
+		// Task 20: r.Post("/harvest/force", harvestHandler.Force)
+	})
+
 	return r
 }

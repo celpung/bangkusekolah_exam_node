@@ -29,9 +29,13 @@ type NodeRepository interface {
 	ListItemsByExam(ctx context.Context) ([]entity.Item, error)
 	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
 	ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error)
+	ListExams(ctx context.Context) ([]entity.Exam, error)
 	FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error)
 	FindLatestAttemptByParticipantAndExam(ctx context.Context, participantID, examID string) (*entity.Attempt, error)
 	CreateIntegrityEvent(ctx context.Context, event *entity.IntegrityEvent) error
 	CountIntegrityEventsSince(ctx context.Context, attemptID string, since time.Time) (int64, error)
 	FindIntegrityEventSince(ctx context.Context, attemptID, eventType string, since time.Time) (*entity.IntegrityEvent, error)
+	CreateExam(ctx context.Context, exam *entity.Exam) error
+	ReplaceBundle(ctx context.Context, exam *entity.Exam, items []entity.Item, participants []entity.Participant) error
+	ListParticipants(ctx context.Context) ([]entity.Participant, error)
 }
