@@ -55,14 +55,43 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	// Resolve each attempt to its exam's deployment ID.
+	// Resolve each attempt to its exam's deployment ID, batching the exam
+	// lookups by unique ExamID to avoid an N+1 query pattern. An orphaned
+	// attempt (missing/corrupt exam row) is logged to harvest_log and left
+	// unharvested — it must never block valid deployments from draining.
+	var resolveFailures []string
 	byDeployment := map[string][]entity.Attempt{}
+	examCache := map[string]*entity.Exam{}
 	for _, att := range attempts {
-		depID, err := s.deploymentForAttempt(ctx, att)
-		if err != nil {
-			return 0, err
+		exam, cached := examCache[att.ExamID]
+		if !cached {
+			e, derr := s.repo.FindExamByID(ctx, att.ExamID)
+			if derr != nil || e == nil {
+				msg := "exam row missing or unloadable"
+				if derr != nil {
+					msg = derr.Error()
+				}
+				errMsg := fmt.Sprintf("resolve deployment for attempt %s (exam %s): %s", att.ID, att.ExamID, msg)
+				slog.ErrorContext(ctx, "harvest: orphaned attempt skipped", "attempt_id", att.ID, "error", errMsg)
+				resolveFailures = append(resolveFailures, errMsg)
+				if logErr := s.repo.LogHarvestFailure(ctx, att.ID, "", 1, errMsg); logErr != nil {
+					slog.ErrorContext(ctx, "harvest_log write failed", "error", logErr)
+				}
+				continue
+			}
+			exam = e
+			examCache[att.ExamID] = e
 		}
-		byDeployment[depID] = append(byDeployment[depID], att)
+		if strings.TrimSpace(exam.DeploymentID) == "" {
+			errMsg := fmt.Sprintf("attempt %s: exam %s has no deployment_id", att.ID, att.ExamID)
+			slog.ErrorContext(ctx, "harvest: orphaned attempt skipped", "attempt_id", att.ID, "error", errMsg)
+			resolveFailures = append(resolveFailures, errMsg)
+			if logErr := s.repo.LogHarvestFailure(ctx, att.ID, "", 1, errMsg); logErr != nil {
+				slog.ErrorContext(ctx, "harvest_log write failed", "error", logErr)
+			}
+			continue
+		}
+		byDeployment[exam.DeploymentID] = append(byDeployment[exam.DeploymentID], att)
 	}
 
 	total := 0
@@ -70,9 +99,9 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 	for _, depID := range sortedKeys(byDeployment) {
 		group := byDeployment[depID]
 		for len(group) > 0 {
-			n, err := s.drainDeployment(ctx, depID, group)
-			if err != nil {
-				return total, err
+			n, perr := s.drainDeployment(ctx, depID, group)
+			if perr != nil {
+				return total, perr
 			}
 			total += n
 			if n < len(group) {
@@ -80,6 +109,13 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 			}
 			group = group[n:]
 		}
+	}
+
+	// Aggregated diagnostic error so callers know some attempts were skipped,
+	// without losing the work already pushed for valid deployments.
+	if len(resolveFailures) > 0 {
+		return total, fmt.Errorf("harvest skipped %d orphaned attempt(s): %s",
+			len(resolveFailures), strings.Join(resolveFailures, "; "))
 	}
 	return total, nil
 }
@@ -133,17 +169,42 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 		}
 		return 0, err
 	}
+	if result == nil {
+		// HIGH-2: a nil result with nil error is a broken pusher — never
+		// dereference it.
+		err := fmt.Errorf("harvest push: nil acknowledgement from central")
+		if logErr := s.repo.LogHarvestFailure(ctx, batch.Attempts[0].ID, deploymentID, len(batch.Attempts), err.Error()); logErr != nil {
+			slog.ErrorContext(ctx, "harvest_log write failed", "error", logErr)
+		}
+		return 0, err
+	}
 
 	now := time.Now().UTC()
-	// BLOCKER-2 guard: only mark IDs that were actually sent in this request.
+	// BLOCKER-2/HIGH-2 ack validation:
+	//   - deduplicate repeated accepted IDs;
+	//   - reject an ID appearing in BOTH accepted and failures (protocol
+	//     error, logged and left unharvested);
+	//   - only IDs actually sent in this request are eligible;
+	//   - accepted IDs stay scoped to this deployment's batch.
 	var accepted []string
+	seenAccepted := map[string]struct{}{}
 	for _, id := range result.AcceptedAttemptIDs {
-		if _, wasSent := sent[id]; wasSent {
-			accepted = append(accepted, id)
-			delete(sent, id)
-		} else {
+		if _, wasSent := sent[id]; !wasSent {
 			slog.WarnContext(ctx, "central acknowledged an unsent attempt — protocol error ignored", "attempt_id", id)
+			continue
 		}
+		if _, dup := seenAccepted[id]; dup {
+			slog.WarnContext(ctx, "central acknowledged the same attempt twice — deduplicated", "attempt_id", id)
+			continue
+		}
+		if reason, rejected := result.Failures[id]; rejected {
+			slog.WarnContext(ctx, "central returned contradictory accept+failure — treating as failure",
+				"attempt_id", id, "reason", reason)
+			continue
+		}
+		seenAccepted[id] = struct{}{}
+		accepted = append(accepted, id)
+		delete(sent, id)
 	}
 	if len(accepted) > 0 {
 		marked, err := s.repo.MarkAttemptsHarvested(ctx, accepted, now)
@@ -168,20 +229,6 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 	}
 
 	return len(accepted), nil
-}
-
-// deploymentForAttempt resolves attempt -> exam -> deployment_id. Attempts
-// without a loadable exam are skipped with a warning rather than failing the
-// whole drain.
-func (s *HarvestService) deploymentForAttempt(ctx context.Context, att entity.Attempt) (string, error) {
-	exam, err := s.repo.FindExamByID(ctx, att.ExamID)
-	if err != nil {
-		return "", fmt.Errorf("resolve deployment for attempt %s (exam %s): %w", att.ID, att.ExamID, err)
-	}
-	if strings.TrimSpace(exam.DeploymentID) == "" {
-		return "", fmt.Errorf("exam %s has no deployment_id", att.ExamID)
-	}
-	return exam.DeploymentID, nil
 }
 
 func sortedKeys(m map[string][]entity.Attempt) []string {

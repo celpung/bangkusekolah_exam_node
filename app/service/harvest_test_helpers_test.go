@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	nodecentral "github.com/celpung/bangkusekolah_exam_node/app/adapter/central"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
+	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 
 	"net/http"
@@ -76,6 +78,44 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return digits
+}
+
+// recordedPush captures one push call: which deployment got which attempts.
+type recordedPush struct {
+	deploymentID string
+	attemptIDs   []string
+}
+
+// multiDeploymentClient records pushes per deployment and answers with a
+// scripted ack.
+type multiDeploymentClient struct {
+	mu     sync.Mutex
+	pushes []recordedPush
+	ack    func(deploymentID string, batch inbound.ExamNodeAttemptBatch) inbound.ExamNodeIngestResult
+}
+
+func (m *multiDeploymentClient) Push(_ context.Context, deploymentID string, batch inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error) {
+	m.mu.Lock()
+	ids := make([]string, 0, len(batch.Attempts))
+	for _, a := range batch.Attempts {
+		ids = append(ids, a.ID)
+	}
+	m.pushes = append(m.pushes, recordedPush{deploymentID: deploymentID, attemptIDs: ids})
+	res := m.ack(deploymentID, batch)
+	m.mu.Unlock()
+	return &res, nil
+}
+
+func (m *multiDeploymentClient) pushesFor(deploymentID string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var ids []string
+	for _, p := range m.pushes {
+		if p.deploymentID == deploymentID {
+			ids = append(ids, p.attemptIDs...)
+		}
+	}
+	return ids
 }
 
 // newTestHarvestClient constructs the real central.HarvestClient pointed at
