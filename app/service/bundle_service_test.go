@@ -94,6 +94,8 @@ func (f *fakeBundleRepo) ListParticipantsByExam(_ context.Context, examID string
 type fakeContentSvc struct{ rebuilt bool }
 
 func (f *fakeContentSvc) RebuildExam(_ context.Context, _ string) error { f.rebuilt = true; return nil }
+func (f *fakeContentSvc) BeginRebuild(string)                           {}
+func (f *fakeContentSvc) CancelRebuild(string)                          {}
 
 func fakeBundle() inbound.ExamNodeBundle {
 	now := time.Now()

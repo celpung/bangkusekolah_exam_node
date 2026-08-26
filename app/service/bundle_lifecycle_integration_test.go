@@ -128,3 +128,5 @@ func (f *lifecycleContentSvc) RebuildExam(_ context.Context, examID string) erro
 	f.rebuiltExams[examID] = true
 	return nil
 }
+func (f *lifecycleContentSvc) BeginRebuild(string)  {}
+func (f *lifecycleContentSvc) CancelRebuild(string) {}

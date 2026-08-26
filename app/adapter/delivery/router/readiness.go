@@ -65,15 +65,15 @@ func NewReadinessRouter(readiness ReadinessReporter, loadedExamIDs func() ([]str
 	return r
 }
 
-// sameSet reports whether both slices contain exactly the same string IDs,
-// ignoring order and duplicates.
+// sameSet reports whether both sides contain exactly the same string IDs,
+// ignoring order AND duplicates on both inputs.
 func sameSet(a []string, b map[string]struct{}) bool {
-	if len(a) != len(b) {
-		return false
-	}
 	setA := make(map[string]struct{}, len(a))
 	for _, id := range a {
 		setA[id] = struct{}{}
+	}
+	if len(setA) != len(b) {
+		return false
 	}
 	for id := range b {
 		if _, ok := setA[id]; !ok {

@@ -17,9 +17,14 @@ import (
 )
 
 // ContentRebuilder lets BundleService refresh the content cache after a load
-// without importing the concrete ContentService.
+// without importing the concrete ContentService. The publication protocol is
+// version-aware: BeginRebuild marks the exam rebuilding before the DB swap,
+// RebuildExam publishes and clears it, CancelRebuild restores readiness when
+// the transaction rolls back.
 type ContentRebuilder interface {
 	RebuildExam(ctx context.Context, examID string) error
+	BeginRebuild(examID string)
+	CancelRebuild(examID string)
 }
 
 type BundleService struct {
@@ -108,18 +113,25 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 		participants[i] = entity.Participant{ID: p.ID, ExamID: bundle.Exam.ID, StudentID: p.StudentID, StudentName: p.StudentName, AccessCode: p.AccessCode}
 	}
 	exam.ContentHash = contentHash(items, participants, exam)
+	// Version-aware publication: mark the exam rebuilding BEFORE the
+	// replacement commits so /readyz and GetExamContent fail closed for the
+	// whole interval between DB publication and successful cache publish.
+	s.contentSvc.BeginRebuild(exam.ID)
 	// All-or-nothing bundle replacement: the destructive multi-table swap
 	// (delete old exam/items/participants, insert new) must roll back on any
 	// failure — a partial bundle would break every downstream check.
 	if err := s.txManager.Atomic(ctx, func(txCtx context.Context) error {
 		return s.repo.ReplaceBundle(txCtx, exam, items, participants)
 	}); err != nil {
+		// Rollback: restore readiness from the still-valid previous snapshot.
+		s.contentSvc.CancelRebuild(exam.ID)
 		return err
 	}
-	// Rebuild/publish the cache only after the transaction commits. If this
-	// fails the exam is marked unready: /readyz reports 503 and
-	// GetExamContent refuses to serve (ErrExamContentNotReady) until a retry
-	// succeeds. The load can be safely retried: ReplaceBundle is idempotent.
+	// Publish the cache only after the transaction commits. Success clears
+	// the rebuilding state; failure keeps the exam unready — /readyz reports
+	// 503 and GetExamContent refuses to serve (ErrExamContentNotReady) until
+	// a retry succeeds. The load can be safely retried: ReplaceBundle is
+	// idempotent.
 	return s.contentSvc.RebuildExam(ctx, exam.ID)
 }
 

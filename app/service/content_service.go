@@ -127,6 +127,23 @@ func (s *ContentService) CacheReadyExams() []string {
 	return out
 }
 
+// BeginRebuild marks an exam as rebuilding before its DB replacement
+// commits: /readyz and GetExamContent fail closed for the whole interval
+// between DB publication and successful cache publish.
+func (s *ContentService) BeginRebuild(examID string) {
+	s.mu.Lock()
+	s.unready[examID] = fmt.Errorf("%w: rebuild in progress", node_error.ErrExamContentNotReady)
+	s.mu.Unlock()
+}
+
+// CancelRebuild clears the rebuilding state after a transaction rollback —
+// the previous cache snapshot is still valid and stays served.
+func (s *ContentService) CancelRebuild(examID string) {
+	s.mu.Lock()
+	delete(s.unready, examID)
+	s.mu.Unlock()
+}
+
 // DropFromCache removes an exam's cache entry (test/ops helper for simulating
 // a DB-committed bundle whose cache publication never happened).
 func (s *ContentService) DropFromCache(examID string) {
