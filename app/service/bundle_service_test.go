@@ -93,9 +93,13 @@ func (f *fakeBundleRepo) ListParticipantsByExam(_ context.Context, examID string
 
 type fakeContentSvc struct{ rebuilt bool }
 
-func (f *fakeContentSvc) RebuildExam(_ context.Context, _ string) error { f.rebuilt = true; return nil }
-func (f *fakeContentSvc) BeginRebuild(string)                           {}
-func (f *fakeContentSvc) CancelRebuild(string)                          {}
+func (f *fakeContentSvc) RebuildExam(_ context.Context, _ string, _ ...uint64) error {
+	f.rebuilt = true
+	return nil
+}
+func (f *fakeContentSvc) BeginRebuild(string) uint64        { return 0 }
+func (f *fakeContentSvc) CancelRebuild(string, uint64) bool { return false }
+func (f *fakeContentSvc) LockExam(string) func()          { return func() {} }
 
 func fakeBundle() inbound.ExamNodeBundle {
 	now := time.Now()

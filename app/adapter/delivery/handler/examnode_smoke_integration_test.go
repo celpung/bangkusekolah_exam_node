@@ -146,9 +146,10 @@ func seedSmokeExam(t *testing.T, dsn string) error {
 
 type smokeRebuilder struct{}
 
-func (smokeRebuilder) RebuildExam(context.Context, string) error { return nil }
-func (smokeRebuilder) BeginRebuild(string)                       {}
-func (smokeRebuilder) CancelRebuild(string)                      {}
+func (smokeRebuilder) RebuildExam(context.Context, string, ...uint64) error { return nil }
+func (smokeRebuilder) BeginRebuild(string) uint64                           { return 0 }
+func (smokeRebuilder) CancelRebuild(string, uint64) bool                    { return false }
+func (smokeRebuilder) LockExam(string) func()                               { return func() {} }
 
 var (
 	_ = config.Config{}

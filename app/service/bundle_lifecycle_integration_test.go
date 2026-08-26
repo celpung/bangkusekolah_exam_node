@@ -121,12 +121,13 @@ func mustExec(t *testing.T, db *gorm.DB, q string) {
 
 type lifecycleContentSvc struct{ rebuiltExams map[string]bool }
 
-func (f *lifecycleContentSvc) RebuildExam(_ context.Context, examID string) error {
+func (f *lifecycleContentSvc) RebuildExam(_ context.Context, examID string, _ ...uint64) error {
 	if f.rebuiltExams == nil {
 		f.rebuiltExams = map[string]bool{}
 	}
 	f.rebuiltExams[examID] = true
 	return nil
 }
-func (f *lifecycleContentSvc) BeginRebuild(string)  {}
-func (f *lifecycleContentSvc) CancelRebuild(string) {}
+func (f *lifecycleContentSvc) BeginRebuild(string) uint64        { return 0 }
+func (f *lifecycleContentSvc) CancelRebuild(string, uint64) bool { return false }
+func (f *lifecycleContentSvc) LockExam(string) func()        { return func() {} }

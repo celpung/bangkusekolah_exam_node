@@ -130,11 +130,15 @@ func TestIntegration_SameExamLiveReloadFailsClosed(t *testing.T) {
 		t.Fatalf("/readyz after failed publish = %d, want 503", code)
 	}
 
-	// 9. Rollback path restores readiness from the previous snapshot.
+	// 9. Recovery: reload v2 rows and publish successfully — CancelRebuild
+	// after a rolled-back load leaves the exam unready, so recovery requires
+	// an actual successful publication.
 	loadReadiness(t, bundleSvcOf(repo, txManager, contentSvc), v2)
-	contentSvc.CancelRebuild("exam-live")
+	if err := contentSvc.RebuildExam(context.Background(), "exam-live"); err != nil {
+		t.Fatalf("recovery rebuild: %v", err)
+	}
 	if code := readyzCode(); code != http.StatusOK {
-		t.Fatalf("/readyz after rollback+cancel = %d, want 200", code)
+		t.Fatalf("/readyz after recovery = %d, want 200", code)
 	}
 }
 
@@ -172,9 +176,10 @@ func replaceViaRepo(t *testing.T, repo outbound_repository.NodeRepository, txMan
 // — simulating a live push whose cache publication has not happened yet.
 type failingRebuilder struct{}
 
-func (failingRebuilder) RebuildExam(context.Context, string) error { return nil }
-func (failingRebuilder) BeginRebuild(string)                       {}
-func (failingRebuilder) CancelRebuild(string)                      {}
+func (failingRebuilder) RebuildExam(context.Context, string, ...uint64) error { return nil }
+func (failingRebuilder) BeginRebuild(string) uint64                           { return 0 }
+func (failingRebuilder) CancelRebuild(string, uint64) bool                    { return false }
+func (failingRebuilder) LockExam(string) func()                               { return func() {} }
 
 func bundleSvcOf(repo outbound_repository.NodeRepository, txManager outbound.TxManager, contentSvc *service.ContentService) *service.BundleService {
 	return service.NewBundleService(repo, txManager, contentSvc)

@@ -19,14 +19,19 @@ import (
 // hosts multiple exams (typically 3-10), so every lookup and rebuild is
 // scoped to a single exam — there is no global cache to cross-serve.
 //
-// Readiness contract: RebuildExam failure during a live bundle push marks the
-// exam unready while the DB keeps the new rows; IsExamReady reports that
-// state and /readyz fails until a retry succeeds.
+// Publication protocol (version-aware): BeginRebuild issues a generation
+// token and marks the exam unready before the DB swap commits. Only the
+// operation holding the CURRENT token may publish (RebuildExam) or cancel;
+// stale operations cannot mutate readiness belonging to a newer version.
 type ContentService struct {
 	repo    outbound_repository.NodeRepository
 	mu      sync.RWMutex
 	cache   map[string]*contentCache // key: exam ID
-	unready map[string]error         // exams whose last rebuild failed
+	unready map[string]error         // exams whose last publication attempt failed or is in flight
+
+	// per-exam load serialization + generation counters
+	loadMu     sync.Map // examID -> *sync.Mutex
+	generation map[string]uint64
 }
 
 type contentCache struct {
@@ -37,14 +42,65 @@ type contentCache struct {
 }
 
 func NewContentService(repo outbound_repository.NodeRepository) *ContentService {
-	return &ContentService{repo: repo, cache: map[string]*contentCache{}, unready: map[string]error{}}
+	return &ContentService{
+		repo:       repo,
+		cache:      map[string]*contentCache{},
+		unready:    map[string]error{},
+		generation: map[string]uint64{},
+	}
 }
 
-// RebuildExam must be called by BundleService after loading one exam's bundle
-// (Task 19) and by startup rehydration. It is the only writer; GetExamContent
-// serves from the snapshot. A failure marks the exam unready until a retry
-// succeeds.
-func (s *ContentService) RebuildExam(ctx context.Context, examID string) error {
+// LockExam serializes bundle loads per exam so two pushes for the same exam
+// cannot interleave their publication windows.
+func (s *ContentService) LockExam(examID string) func() {
+	v, _ := s.loadMu.LoadOrStore(examID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// BeginRebuild marks an exam as rebuilding before its DB replacement commits
+// and returns the generation token for this publication. Only this token may
+// publish or cancel; a newer BeginRebuild invalidates older tokens.
+func (s *ContentService) BeginRebuild(examID string) uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.generation[examID]++
+	token := s.generation[examID]
+	s.unready[examID] = fmt.Errorf("%w: rebuild in progress (generation %d)", node_error.ErrExamContentNotReady, token)
+	return token
+}
+
+// CancelRebuild handles the state after a rolled-back transaction. The DB
+// still holds whatever version was last successfully published — which the
+// service cannot verify from here — so the exam REMAINS unready with an
+// explicit "publication failed" cause until a retry succeeds and publishes.
+// Only when this operation's own in-progress marker is present AND no rows
+// were changed (marker untouched by a failure) is readiness restored.
+func (s *ContentService) CancelRebuild(examID string, token uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.generation[examID] != token {
+		return false // superseded by a newer operation
+	}
+	// Conservative fail-closed: a rolled-back load leaves publication state
+	// unknown, so keep the exam unready until a successful rebuild.
+	s.unready[examID] = fmt.Errorf("%w: publication rolled back; retry required", node_error.ErrExamContentNotReady)
+	return true
+}
+
+// RebuildExam publishes the cache for the exam's current DB rows and clears
+// the rebuilding state for the given generation. Stale generations are
+// rejected without touching state.
+func (s *ContentService) RebuildExam(ctx context.Context, examID string, token ...uint64) error {
+	if len(token) > 0 {
+		s.mu.RLock()
+		current := s.generation[examID]
+		s.mu.RUnlock()
+		if current != token[0] {
+			return fmt.Errorf("%w: generation %d superseded by %d", node_error.ErrExamContentNotReady, token[0], current)
+		}
+	}
 	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
 		s.markUnready(examID, err)
@@ -102,8 +158,8 @@ func (s *ContentService) markUnready(examID string, cause error) {
 	s.mu.Unlock()
 }
 
-// UnreadyExams returns every exam whose latest rebuild failed with its cause —
-// /readyz turns this into a 503 until retries succeed.
+// UnreadyExams returns every exam whose latest publication attempt failed or
+// is still in flight — /readyz turns this into a 503 until retries succeed.
 func (s *ContentService) UnreadyExams() map[string]error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -125,23 +181,6 @@ func (s *ContentService) CacheReadyExams() []string {
 		out = append(out, id)
 	}
 	return out
-}
-
-// BeginRebuild marks an exam as rebuilding before its DB replacement
-// commits: /readyz and GetExamContent fail closed for the whole interval
-// between DB publication and successful cache publish.
-func (s *ContentService) BeginRebuild(examID string) {
-	s.mu.Lock()
-	s.unready[examID] = fmt.Errorf("%w: rebuild in progress", node_error.ErrExamContentNotReady)
-	s.mu.Unlock()
-}
-
-// CancelRebuild clears the rebuilding state after a transaction rollback —
-// the previous cache snapshot is still valid and stays served.
-func (s *ContentService) CancelRebuild(examID string) {
-	s.mu.Lock()
-	delete(s.unready, examID)
-	s.mu.Unlock()
 }
 
 // DropFromCache removes an exam's cache entry (test/ops helper for simulating

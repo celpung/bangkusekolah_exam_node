@@ -22,9 +22,11 @@ import (
 // RebuildExam publishes and clears it, CancelRebuild restores readiness when
 // the transaction rolls back.
 type ContentRebuilder interface {
-	RebuildExam(ctx context.Context, examID string) error
-	BeginRebuild(examID string)
-	CancelRebuild(examID string)
+	RebuildExam(ctx context.Context, examID string, token ...uint64) error
+	BeginRebuild(examID string) uint64
+	CancelRebuild(examID string, token uint64) bool
+	// LockExam serializes same-exam loads; returns the unlock func.
+	LockExam(examID string) func()
 }
 
 type BundleService struct {
@@ -58,8 +60,12 @@ func canonicalBundleBytes(bundle inbound.ExamNodeBundle) []byte {
 
 // LoadBundle validates and stores one exam's bundle atomically. Loading the
 // same exam again replaces its rows — a half-loaded bundle (exam without
-// items) would be a worse failure than refusing to load.
+// items) would be a worse failure than refusing to load. Loads for the same
+// exam are serialized so concurrent pushes cannot interleave publication.
 func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeBundle) error {
+	unlock := s.contentSvc.LockExam(bundle.Exam.ID)
+	defer unlock()
+
 	for _, item := range bundle.Items {
 		if item.QuestionType == "file_upload" {
 			return fmt.Errorf("%w: item %s", node_error.ErrBundleFileUpload, item.ID)
@@ -114,17 +120,18 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 	}
 	exam.ContentHash = contentHash(items, participants, exam)
 	// Version-aware publication: mark the exam rebuilding BEFORE the
-	// replacement commits so /readyz and GetExamContent fail closed for the
-	// whole interval between DB publication and successful cache publish.
-	s.contentSvc.BeginRebuild(exam.ID)
+	// replacement commits and capture this operation's generation token, so
+	// a stale/rolled-back load can never mutate a newer publication state.
+	token := s.contentSvc.BeginRebuild(exam.ID)
 	// All-or-nothing bundle replacement: the destructive multi-table swap
 	// (delete old exam/items/participants, insert new) must roll back on any
 	// failure — a partial bundle would break every downstream check.
 	if err := s.txManager.Atomic(ctx, func(txCtx context.Context) error {
 		return s.repo.ReplaceBundle(txCtx, exam, items, participants)
 	}); err != nil {
-		// Rollback: restore readiness from the still-valid previous snapshot.
-		s.contentSvc.CancelRebuild(exam.ID)
+		// Rollback: restore readiness from the still-valid previous snapshot
+		// — only if no newer operation has superseded this one.
+		s.contentSvc.CancelRebuild(exam.ID, token)
 		return err
 	}
 	// Publish the cache only after the transaction commits. Success clears
@@ -132,7 +139,7 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 	// 503 and GetExamContent refuses to serve (ErrExamContentNotReady) until
 	// a retry succeeds. The load can be safely retried: ReplaceBundle is
 	// idempotent.
-	return s.contentSvc.RebuildExam(ctx, exam.ID)
+	return s.contentSvc.RebuildExam(ctx, exam.ID, token)
 }
 
 // Preflight re-checks one exam's stored bundle against central's expected
