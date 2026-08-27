@@ -14,11 +14,11 @@ const (
 	CtxParticipantID ctxKey = "participant_id"
 	CtxStudentID     ctxKey = "student_id"
 	CtxExamID        ctxKey = "exam_id"
+	CtxDeploymentID  ctxKey = "deployment_id"
 )
 
-// AuthMiddleware validates the student's JWT and injects participant_id into
-// context. It does no DB lookup — identity is carried in the token, not
-// fetched per request. The JWT's exp is the only invalidation.
+// AuthMiddleware validates the student's JWT and injects identity into context.
+// It does no DB lookup — identity is carried in the token.
 func AuthMiddleware(issuer outbound.JWTIssuer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,13 +28,14 @@ func AuthMiddleware(issuer outbound.JWTIssuer) func(http.Handler) http.Handler {
 				return
 			}
 			claims, err := issuer.Parse(r.Context(), strings.TrimSpace(strings.TrimPrefix(raw, "Bearer ")))
-			if err != nil || claims == nil || claims.ParticipantID == "" {
+			if err != nil || claims == nil || claims.ParticipantID == "" || claims.ExamID == "" || claims.DeploymentID == "" {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
 			ctx := context.WithValue(r.Context(), CtxParticipantID, claims.ParticipantID)
 			ctx = context.WithValue(ctx, CtxStudentID, claims.StudentID)
 			ctx = context.WithValue(ctx, CtxExamID, claims.ExamID)
+			ctx = context.WithValue(ctx, CtxDeploymentID, claims.DeploymentID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -52,5 +53,10 @@ func StudentIDFromContext(ctx context.Context) (string, bool) {
 
 func ExamIDFromContext(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(CtxExamID).(string)
+	return v, ok && v != ""
+}
+
+func DeploymentIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(CtxDeploymentID).(string)
 	return v, ok && v != ""
 }

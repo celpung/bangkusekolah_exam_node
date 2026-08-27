@@ -103,7 +103,7 @@ func TestIntegration_ConcurrentStartAttemptExactlyOne(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func(idx int) {
 			defer wg.Done()
-			att, err := svc.StartAttempt(context.Background(), "part-conc")
+			att, err := svc.StartAttempt(context.Background(), "part-conc", "exam-conc")
 			results[idx] = att
 			errs[idx] = err
 		}(i)

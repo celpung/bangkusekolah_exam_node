@@ -25,18 +25,6 @@ func NewNodeRepository(db *gorm.DB) outbound_repository.NodeRepository {
 	return &nodeRepository{db: db}
 }
 
-func (r *nodeRepository) FindExam(ctx context.Context) (*entity.Exam, error) {
-	db := helper.GetDB(ctx, r.db)
-	var m model.Exam
-	if err := db.First(&m).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, node_error.ErrExamNotLoaded
-		}
-		return nil, err
-	}
-	return mapper.ToExamEntity(&m), nil
-}
-
 func (r *nodeRepository) FindParticipantByID(ctx context.Context, id string) (*entity.Participant, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Participant
@@ -69,6 +57,19 @@ func (r *nodeRepository) FindActiveAttemptByParticipant(ctx context.Context, pid
 			return nil, node_error.ErrAttemptNotFound
 		}
 		return nil, err
+	}
+	return mapper.ToAttemptEntity(&m), nil
+}
+
+func (r *nodeRepository) FindActiveAttemptByParticipantAndExam(ctx context.Context, pid, examID string) (*entity.Attempt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Attempt
+	// idx_attempts_exam (exam_id, participant_id, attempt_no) scopes lookup to one exam
+	if err := db.Where("participant_id = ? AND exam_id = ? AND status = ?", pid, examID, string(entity.AttemptInProgress)).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("find active attempt by participant and exam: %w", err)
 	}
 	return mapper.ToAttemptEntity(&m), nil
 }

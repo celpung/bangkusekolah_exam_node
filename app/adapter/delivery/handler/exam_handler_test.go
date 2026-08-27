@@ -47,7 +47,7 @@ type fakeAttemptUC struct {
 	err   error
 }
 
-func (f *fakeAttemptUC) StartAttempt(_ context.Context, _ string) (*entity.Attempt, error) {
+func (f *fakeAttemptUC) StartAttempt(_ context.Context, _, _ string) (*entity.Attempt, error) {
 	return nil, nil
 }
 func (f *fakeAttemptUC) GetAttemptState(_ context.Context, _, _ string) (*inbound.AttemptState, error) {

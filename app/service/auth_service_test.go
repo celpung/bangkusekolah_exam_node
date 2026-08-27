@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
@@ -13,16 +14,21 @@ import (
 
 type fakeAuthRepo struct {
 	outbound_repository.NodeRepository
-	exam         *entity.Exam
+	exams        map[string]*entity.Exam
 	participants map[string]*entity.Participant // key: access_code
 }
 
-func (f *fakeAuthRepo) FindExam(_ context.Context) (*entity.Exam, error) { return f.exam, nil }
 func (f *fakeAuthRepo) FindParticipantByAccessCode(_ context.Context, code string) (*entity.Participant, error) {
 	if p, ok := f.participants[code]; ok {
 		return p, nil
 	}
 	return nil, node_error.ErrInvalidAccessCode
+}
+func (f *fakeAuthRepo) FindExamByID(_ context.Context, id string) (*entity.Exam, error) {
+	if e, ok := f.exams[id]; ok {
+		return e, nil
+	}
+	return nil, node_error.ErrExamNotLoaded
 }
 
 type fakeIssuer struct {
@@ -30,9 +36,9 @@ type fakeIssuer struct {
 	claims map[string]*fakeClaim
 }
 
-type fakeClaim struct{ pid, sid, eid string }
+type fakeClaim struct{ pid, sid, eid, dep string }
 
-func (f *fakeIssuer) Issue(_ context.Context, pid, sid, eid string) (string, error) {
+func (f *fakeIssuer) Issue(_ context.Context, pid, sid, eid, dep string) (string, error) {
 	tok := "jwt-" + pid
 	if f.token != "" {
 		tok = f.token
@@ -40,23 +46,24 @@ func (f *fakeIssuer) Issue(_ context.Context, pid, sid, eid string) (string, err
 	if f.claims == nil {
 		f.claims = map[string]*fakeClaim{}
 	}
-	f.claims[tok] = &fakeClaim{pid, sid, eid}
+	f.claims[tok] = &fakeClaim{pid, sid, eid, dep}
 	return tok, nil
 }
 func (f *fakeIssuer) Parse(_ context.Context, _ string) (*outbound.JWTClaims, error) {
 	return nil, nil
 }
+func (f *fakeIssuer) TTL() time.Duration { return 90 * time.Minute }
 
 func authFixture() (*AuthService, *fakeAuthRepo) {
-	exam := &entity.Exam{ID: "exam-1", AccessCodePrefix: "K7M2QX", Title: "UTS"}
+	exam := &entity.Exam{ID: "exam-1", DeploymentID: "dep-1", AccessCodePrefix: "K7M2QX", Title: "UTS"}
 	repo := &fakeAuthRepo{
-		exam: exam,
+		exams: map[string]*entity.Exam{"exam-1": exam},
 		participants: map[string]*entity.Participant{
-			"K7M2QX-3B9FTD": {ID: "part-1", StudentID: "stu-1", StudentName: "Budi", AccessCode: "K7M2QX-3B9FTD"},
+			"K7M2QX-3B9FTD": {ID: "part-1", ExamID: "exam-1", DeploymentID: "dep-1", StudentID: "stu-1", StudentName: "Budi", AccessCode: "K7M2QX-3B9FTD"},
 		},
 	}
 	issuer := &fakeIssuer{}
-	svc := &AuthService{repo: repo, issuer: issuer}
+	svc := NewAuthServiceWithLimits(repo, issuer, 90*time.Minute, 100, time.Minute)
 	return svc, repo
 }
 
@@ -66,8 +73,11 @@ func TestLoginSucceedsWithCorrectCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	if res.ParticipantID != "part-1" || res.StudentID != "stu-1" || res.ExamID != "exam-1" || res.Token == "" {
+	if res.ParticipantID != "part-1" || res.StudentID != "stu-1" || res.ExamID != "exam-1" || res.DeploymentID != "dep-1" || res.Token == "" {
 		t.Fatalf("login result = %+v", res)
+	}
+	if res.ExpiresAt <= time.Now().Unix() {
+		t.Fatalf("expires_at must be future: %d", res.ExpiresAt)
 	}
 }
 
@@ -129,8 +139,8 @@ func TestLoginIsConstantTimeForUnknownCode(t *testing.T) {
 
 func TestLoginRejectsWhenExamNotLoaded(t *testing.T) {
 	svc, repo := authFixture()
-	repo.exam = nil
-	if _, err := svc.Login(context.Background(), "K7M2QX-3B9FTD"); !errors.Is(err, node_error.ErrExamNotLoaded) {
-		t.Fatalf("want ErrExamNotLoaded, got %v", err)
+	repo.exams = map[string]*entity.Exam{}
+	if _, err := svc.Login(context.Background(), "K7M2QX-3B9FTD"); !errors.Is(err, node_error.ErrInvalidAccessCode) {
+		t.Fatalf("want ErrInvalidAccessCode when exam missing, got %v", err)
 	}
 }

@@ -68,7 +68,7 @@ func TestBurst(t *testing.T) {
 	for i := 0; i < students; i++ {
 		go func(pid string) {
 			defer wg.Done()
-			_, err := attemptSvc.StartAttempt(context.Background(), pid)
+			_, err := attemptSvc.StartAttempt(context.Background(), pid, bundle.Exam.ID)
 			if err != nil {
 				errors.Add(1)
 				t.Logf("StartAttempt %s: %v", pid, err)

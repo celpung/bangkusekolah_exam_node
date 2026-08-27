@@ -15,7 +15,7 @@ type stubIssuer struct {
 	err    error
 }
 
-func (s *stubIssuer) Issue(_ context.Context, _, _, _ string) (string, error) { return "tok", nil }
+func (s *stubIssuer) Issue(_ context.Context, _, _, _, _ string) (string, error) { return "tok", nil }
 func (s *stubIssuer) Parse(_ context.Context, _ string) (*outbound.JWTClaims, error) {
 	return s.claims, s.err
 }
@@ -37,7 +37,8 @@ func runAuth(t *testing.T, issuer outbound.JWTIssuer, header string) (*httptest.
 }
 
 func TestAuthMiddlewareInjectsParticipantIDFromValidToken(t *testing.T) {
-	rec, pid := runAuth(t, &stubIssuer{claims: &outbound.JWTClaims{ParticipantID: "part-1", StudentID: "stu-1"}}, "Bearer valid.token")
+	claims := &outbound.JWTClaims{ParticipantID: "part-1", StudentID: "stu-1", ExamID: "exam-1", DeploymentID: "dep-1", ExpiresAt: 9999999999, IssuedAt: 1}
+	rec, pid := runAuth(t, &stubIssuer{claims: claims}, "Bearer valid.token")
 	if rec.Code != http.StatusOK || pid != "part-1" {
 		t.Fatalf("code=%d pid=%q", rec.Code, pid)
 	}
@@ -71,6 +72,14 @@ func TestAuthMiddlewareRejectsTokenWithoutParticipantID(t *testing.T) {
 	rec, _ := runAuth(t, &stubIssuer{claims: &outbound.JWTClaims{}}, "Bearer valid.token")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("empty pid: code=%d want 401", rec.Code)
+	}
+}
+
+func TestAuthMiddlewareRejectsTokenWithoutDeploymentID(t *testing.T) {
+	claims := &outbound.JWTClaims{ParticipantID: "part-1", StudentID: "stu-1", ExamID: "exam-1", ExpiresAt: 999, IssuedAt: 1}
+	rec, _ := runAuth(t, &stubIssuer{claims: claims}, "Bearer valid.token")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("missing deployment_id: code=%d want 401", rec.Code)
 	}
 }
 

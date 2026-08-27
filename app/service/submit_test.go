@@ -48,6 +48,10 @@ func (f *fakeSubmitRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) err
 	return nil
 }
 func (f *fakeSubmitRepo) FindExam(_ context.Context) (*entity.Exam, error) { return f.exam, nil }
+func (f *fakeSubmitRepo) FindExamByID(_ context.Context, id string) (*entity.Exam, error) {
+	if f.exam != nil && f.exam.ID == id { return f.exam, nil }
+	return nil, node_error.ErrExamNotLoaded
+}
 
 // ListExpiredAttempts mirrors the sweeper's query so the race test can hand
 // the sweeper a stale expired list without hitting the nil embedded interface.
@@ -67,8 +71,8 @@ func submitFixture() (*AttemptService, *fakeSubmitRepo) {
 	repo := &fakeSubmitRepo{
 		exam: exam,
 		attempts: map[string]*entity.Attempt{
-			"att-1":         {ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", Status: entity.AttemptInProgress, AttemptNo: 1, StartedAt: time.Now().Add(-30 * time.Minute), DueAt: time.Now().Add(60 * time.Minute), MaxScore: 30, GradingStatus: entity.GradingPending},
-			"att-submitted": {ID: "att-submitted", ParticipantID: "part-1", StudentID: "stu-1", Status: entity.AttemptSubmitted, SubmittedAt: ptrTime(time.Now()), MaxScore: 30},
+			"att-1":         {ID: "att-1", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1", Status: entity.AttemptInProgress, AttemptNo: 1, StartedAt: time.Now().Add(-30 * time.Minute), DueAt: time.Now().Add(60 * time.Minute), MaxScore: 30, GradingStatus: entity.GradingPending},
+			"att-submitted": {ID: "att-submitted", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1", Status: entity.AttemptSubmitted, SubmittedAt: ptrTime(time.Now()), MaxScore: 30},
 		},
 		answers: map[string][]entity.Answer{
 			"att-1": {

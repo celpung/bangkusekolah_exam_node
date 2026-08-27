@@ -12,8 +12,11 @@ import (
 )
 
 // NewRouter assembles the full node HTTP surface: the student sitting flow
-// under the JWT middleware and internal central→node routes under the shared
-// node token.
+// under the JWT middleware, the public auth route outside it, and internal
+// central→node routes under the shared node token.
+// authUC and studentUC are optional variadic to preserve backward compatibility
+// with existing handler tests that call the 7-arg form: if supplied they are
+// wired as POST /api/v1/auth/exam-login and GET/POST student exam routes.
 func NewRouter(
 	issuer outbound.JWTIssuer,
 	nodeToken string,
@@ -23,13 +26,38 @@ func NewRouter(
 	internalHandler *handler.InternalHandler,
 	harvestHandler *handler.HarvestHandler,
 	readiness http.Handler,
+	extra ...interface{},
 ) http.Handler {
+	var authUC inbound.AuthUsecase
+	var studentUC inbound.StudentExamUsecase
+	if len(extra) > 0 {
+		if v, ok := extra[0].(inbound.AuthUsecase); ok {
+			authUC = v
+		}
+	}
+	if len(extra) > 1 {
+		if v, ok := extra[1].(inbound.StudentExamUsecase); ok {
+			studentUC = v
+		}
+	}
+
 	r := chi.NewRouter()
 
 	r.Mount("/", readiness)
 
+	if authUC != nil {
+		authH := handler.NewAuthHandler(authUC)
+		r.Post("/api/v1/auth/exam-login", authH.Login)
+	}
+
 	r.Route("/api/v1/student", func(r chi.Router) {
 		r.Use(node_middleware.AuthMiddleware(issuer))
+		// Student exam list/start are token-scoped
+		if studentUC != nil && attemptUC != nil {
+			studentH := handler.NewStudentExamHandler(studentUC, attemptUC)
+			r.Get("/exams", studentH.ListExams)
+			r.Post("/exams/{examId}/attempts", studentH.StartAttempt)
+		}
 		examH := handler.NewExamHandler(contentUC)
 		attemptH := handler.NewAttemptHandler(attemptUC, integrityUC)
 		r.Get("/exams/{examId}/content", examH.GetContent)

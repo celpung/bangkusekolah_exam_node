@@ -92,6 +92,7 @@ type Item struct {
 type Participant struct {
 	ID              string
 	ExamID          string
+	DeploymentID    string
 	StudentID       string
 	StudentName     string
 	AccessCode      string

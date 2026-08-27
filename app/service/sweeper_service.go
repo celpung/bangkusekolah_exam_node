@@ -40,15 +40,10 @@ func (e *SweepError) Error() string {
 func (e *SweepError) Unwrap() error { return e.Cause }
 
 // SweepExpiredAttempts finalizes every in_progress attempt past due_at.
-// A concurrently submitted attempt is skipped as already finalized (no error).
-// Any attempt that cannot be finalized surfaces in the returned error so the
-// harvest flow refuses to proceed with unfinished attempts.
+// Scoped per-exam: each attempt's exam is loaded by ID so multi-exam nodes
+// do not share hasManualItems across exams.
 func (s *SweeperService) SweepExpiredAttempts(ctx context.Context) (int, error) {
 	expired, err := s.repo.ListExpiredAttempts(ctx, time.Now())
-	if err != nil {
-		return 0, &SweepError{Cause: err}
-	}
-	exam, err := s.repo.FindExam(ctx)
 	if err != nil {
 		return 0, &SweepError{Cause: err}
 	}
@@ -56,6 +51,16 @@ func (s *SweeperService) SweepExpiredAttempts(ctx context.Context) (int, error) 
 	var firstFailure *SweepError
 	failed := 0
 	for _, attempt := range expired {
+		exam, err := s.repo.FindExamByID(ctx, attempt.ExamID)
+		if err != nil {
+			// If exam not found, treat as failure — do not silently drop.
+			slog.WarnContext(ctx, "sweeper: exam not found for attempt", "attempt_id", attempt.ID, "exam_id", attempt.ExamID, "error", err)
+			failed++
+			if firstFailure == nil {
+				firstFailure = &SweepError{Failed: 1, AttemptID: attempt.ID, Cause: err}
+			}
+			continue
+		}
 		if err := s.finalizeOne(ctx, exam.HasManualItems, attempt); err != nil {
 			// A concurrent submit already finalized this attempt — a safe,
 			// idempotent race, not a failure. Skip it without an error.

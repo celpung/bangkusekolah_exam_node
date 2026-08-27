@@ -22,7 +22,7 @@ type fakeSittingAttemptUC struct {
 	getResultFn func(ctx context.Context, participantID, examID string) (*entity.Attempt, error)
 }
 
-func (f *fakeSittingAttemptUC) StartAttempt(_ context.Context, _ string) (*entity.Attempt, error) {
+func (f *fakeSittingAttemptUC) StartAttempt(_ context.Context, _, _ string) (*entity.Attempt, error) {
 	return nil, nil
 }
 func (f *fakeSittingAttemptUC) GetAttemptState(_ context.Context, _, _ string) (*inbound.AttemptState, error) {

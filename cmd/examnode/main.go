@@ -51,6 +51,8 @@ func main() {
 	harvestClient := nodecentral.NewHarvestClient(cfg)
 	harvestSvc := service.NewHarvestService(repo, harvestClient)
 	sweeperSvc := service.NewSweeperService(repo, txManager)
+	authSvc := service.NewAuthService(repo, issuer)
+	studentExamSvc := service.NewStudentExamService(repo)
 
 	// Rehydrate the in-memory content cache from the persisted bundles
 	// BEFORE accepting traffic — a restart must not break the sitting flow.
@@ -81,7 +83,7 @@ func main() {
 			return ids, nil
 		},
 		sqlDB.Ping)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
+	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness, authSvc, studentExamSvc))
 
 	// Background workers: sweeper drains expired attempts each tick; harvest
 	// pushes finished work to central every cfg.HarvestInterval (default 5m).
