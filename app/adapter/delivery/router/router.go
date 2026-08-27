@@ -17,6 +17,7 @@ import (
 func NewRouter(
 	issuer outbound.JWTIssuer,
 	nodeToken string,
+	authUC inbound.AuthUsecase,
 	contentUC inbound.ContentUsecase,
 	attemptUC inbound.AttemptUsecase,
 	integrityUC inbound.IntegrityUsecase,
@@ -28,10 +29,14 @@ func NewRouter(
 
 	r.Mount("/", readiness)
 
+	authH := handler.NewAuthHandler(authUC)
+	r.Post("/api/v1/auth/exam-login", authH.Login)
+
 	r.Route("/api/v1/student", func(r chi.Router) {
 		r.Use(node_middleware.AuthMiddleware(issuer))
 		examH := handler.NewExamHandler(contentUC)
 		attemptH := handler.NewAttemptHandler(attemptUC, integrityUC)
+		r.Post("/exams/{examId}/attempts", attemptH.Start)
 		r.Get("/exams/{examId}/content", examH.GetContent)
 		r.Get("/exams/{examId}/result", attemptH.GetResult)
 		r.Get("/exam-attempts/{attemptId}", attemptH.GetState)
