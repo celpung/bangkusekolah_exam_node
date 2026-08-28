@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -112,12 +111,6 @@ func startFenceReconciler(ctx context.Context, repo outbound_repository.Deployme
 	if interval <= 0 {
 		return
 	}
-	// E2E-only failure-injection hook: when set, the local fence write is
-	// skipped for the matching deployment so the reconciler never sends the
-	// acknowledgement. Never set in production; used by the cross-process
-	// abort-fencing E2E (service app/e2e) to prove central delegation is
-	// kept while local fencing has not succeeded.
-	failLocalFenceDeployment := os.Getenv("E2E_FAIL_LOCAL_FENCE_DEPLOYMENT")
 	reconcile := func() {
 		fences, err := client.ListPendingFences(ctx)
 		if err != nil {
@@ -125,8 +118,9 @@ func startFenceReconciler(ctx context.Context, repo outbound_repository.Deployme
 			return
 		}
 		for _, fence := range fences {
-			if failLocalFenceDeployment != "" && fence.ID == failLocalFenceDeployment {
-				log.Printf("E2E hook: skipping local fence write for deployment %s", fence.ID)
+			// Failure injection is compiled in only with the `e2e` build tag;
+			// the production build's implementation always returns false.
+			if shouldSkipLocalFence(fence.ID) {
 				continue
 			}
 			if err := repo.MarkDeploymentFenced(ctx, fence.ID, time.Now().UTC()); err != nil {
