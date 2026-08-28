@@ -439,6 +439,27 @@ func (r *nodeRepository) ListExams(ctx context.Context) ([]entity.Exam, error) {
 	return entities, nil
 }
 
+func (r *nodeRepository) MarkDeploymentFenced(ctx context.Context, deploymentID string, at time.Time) error {
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.Exam{}).Where("deployment_id = ?", deploymentID).Update("fenced_at", at)
+	if result.Error != nil {
+		return fmt.Errorf("mark deployment fenced: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return node_error.ErrExamNotLoaded
+	}
+	return nil
+}
+
+func (r *nodeRepository) IsDeploymentFenced(ctx context.Context, examID string, deploymentID string) (bool, error) {
+	db := helper.GetDB(ctx, r.db)
+	var count int64
+	if err := db.Model(&model.Exam{}).Where("id = ? AND deployment_id = ? AND fenced_at IS NOT NULL", examID, deploymentID).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check deployment fence: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *nodeRepository) FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Attempt

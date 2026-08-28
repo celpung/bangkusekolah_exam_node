@@ -19,6 +19,7 @@ import (
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
+	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
 )
 
@@ -49,8 +50,10 @@ func main() {
 	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
 	bundleSvc := service.NewBundleService(repo, txManager, contentSvc)
 	harvestClient := nodecentral.NewHarvestClient(cfg)
+	fenceClient := nodecentral.NewFenceClient(cfg.CentralBaseURL, cfg.CentralNodeToken)
 	harvestSvc := service.NewHarvestService(repo, harvestClient)
 	sweeperSvc := service.NewSweeperService(repo, txManager)
+	harvestSvc.SetSweeper(sweeperSvc)
 	authSvc := service.NewAuthService(repo, issuer)
 	studentExamSvc := service.NewStudentExamService(repo)
 
@@ -83,12 +86,15 @@ func main() {
 			return ids, nil
 		},
 		sqlDB.Ping)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness, authSvc, studentExamSvc))
+	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness, authSvc, studentExamSvc, repo))
 
 	// Background workers: sweeper drains expired attempts each tick; harvest
 	// pushes finished work to central every cfg.HarvestInterval (default 5m).
 	go sweeperSvc.Start(context.Background(), cfg.SweepInterval)
 	go harvestSvc.Start(context.Background(), cfg.HarvestInterval)
+	if fenceRepo, ok := repo.(outbound_repository.DeploymentFenceRepository); ok {
+		go startFenceReconciler(context.Background(), fenceRepo, fenceClient, cfg.HeartbeatInterval)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
@@ -98,6 +104,39 @@ func main() {
 	log.Printf("examnode listening on %s", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+func startFenceReconciler(ctx context.Context, repo outbound_repository.DeploymentFenceRepository, client *nodecentral.FenceClient, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	reconcile := func() {
+		fences, err := client.ListPendingFences(ctx)
+		if err != nil {
+			log.Printf("fence discovery failed: %v", err)
+			return
+		}
+		for _, fence := range fences {
+			if err := repo.MarkDeploymentFenced(ctx, fence.ID, time.Now().UTC()); err != nil {
+				log.Printf("local fence failed for deployment %s: %v", fence.ID, err)
+				continue
+			}
+			if err := client.AcknowledgeFence(ctx, fence.ID); err != nil {
+				log.Printf("fence acknowledgement failed for deployment %s: %v", fence.ID, err)
+			}
+		}
+	}
+	reconcile()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
 	}
 }
 

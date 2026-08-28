@@ -91,7 +91,7 @@ func TestIntegration_ConcurrentStartAttemptExactlyOne(t *testing.T) {
 	if err := db.Create(exam).Error; err != nil {
 		t.Fatalf("seed exam: %v", err)
 	}
-	part := &model.Participant{ID: "part-conc", StudentID: "stu-conc", StudentName: "Budi", AccessCode: "ABCDEF-GHIJKL", AttemptCount: 0}
+	part := &model.Participant{ID: "part-conc", ExamID: "exam-conc", StudentID: "stu-conc", StudentName: "Budi", AccessCode: "ABCDEF-GHIJKL", AttemptCount: 0}
 	if err := db.Create(part).Error; err != nil {
 		t.Fatalf("seed participant: %v", err)
 	}

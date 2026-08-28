@@ -63,6 +63,7 @@ type Exam struct {
 	AccessCodePrefix      string
 	BundleChecksum        string
 	ContentHash           string
+	FencedAt              *time.Time
 	LoadedAt              time.Time
 }
 

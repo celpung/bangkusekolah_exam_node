@@ -57,7 +57,7 @@ func main() {
 	}
 	fmt.Printf("swept %d expired attempts\n", swept)
 
-	n, err := harvestSvc.DrainOnce(ctx)
+	n, err := harvestSvc.DrainFinal(ctx)
 	if err != nil {
 		fatalf("harvest: %v", err)
 	}

@@ -7,6 +7,11 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 )
 
+type DeploymentFenceRepository interface {
+	MarkDeploymentFenced(ctx context.Context, deploymentID string, at time.Time) error
+	IsDeploymentFenced(ctx context.Context, examID string, deploymentID string) (bool, error)
+}
+
 type NodeRepository interface {
 	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
 	FindParticipantByID(ctx context.Context, participantID string) (*entity.Participant, error)

@@ -17,7 +17,7 @@ func NewHarvestHandler(svc *service.HarvestService) *HarvestHandler {
 // Force runs one synchronous drain now — the runbook's
 // POST /internal/v1/harvest/force.
 func (h *HarvestHandler) Force(w http.ResponseWriter, r *http.Request) {
-	n, err := h.svc.DrainOnce(r.Context())
+	n, err := h.svc.DrainFinal(r.Context())
 	if err != nil {
 		delivery_helper.HandleError(w, err)
 		return

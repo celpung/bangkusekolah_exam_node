@@ -9,6 +9,7 @@ import (
 	node_middleware "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/middleware"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
+	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 )
 
 // NewRouter assembles the full node HTTP surface: the student sitting flow
@@ -30,6 +31,7 @@ func NewRouter(
 ) http.Handler {
 	var authUC inbound.AuthUsecase
 	var studentUC inbound.StudentExamUsecase
+	var fenceRepo outbound_repository.DeploymentFenceRepository
 	if len(extra) > 0 {
 		if v, ok := extra[0].(inbound.AuthUsecase); ok {
 			authUC = v
@@ -39,6 +41,9 @@ func NewRouter(
 		if v, ok := extra[1].(inbound.StudentExamUsecase); ok {
 			studentUC = v
 		}
+	}
+	if len(extra) > 2 {
+		fenceRepo, _ = extra[2].(outbound_repository.DeploymentFenceRepository)
 	}
 
 	r := chi.NewRouter()
@@ -51,7 +56,11 @@ func NewRouter(
 	}
 
 	r.Route("/api/v1/student", func(r chi.Router) {
-		r.Use(node_middleware.AuthMiddleware(issuer))
+		if fenceRepo != nil {
+			r.Use(node_middleware.AuthMiddleware(issuer, fenceRepo))
+		} else {
+			r.Use(node_middleware.AuthMiddleware(issuer))
+		}
 		// Student exam list/start are token-scoped
 		if studentUC != nil && attemptUC != nil {
 			studentH := handler.NewStudentExamHandler(studentUC, attemptUC)

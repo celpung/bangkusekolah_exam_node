@@ -99,7 +99,7 @@ func TestIntegration_ReadyzAndContentRecoverAfterUnready(t *testing.T) {
 
 	// Mint a student token via the real issuer.
 	issuer := node_security.NewJWTIssuer(cfg)
-	token, err := issuer.Issue(context.Background(), "p-ready", "s-ready", "exam-ready")
+	token, err := issuer.Issue(context.Background(), "p-ready", "s-ready", "exam-ready", "dep-ready")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
