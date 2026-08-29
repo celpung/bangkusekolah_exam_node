@@ -54,7 +54,7 @@ func main() {
 	harvestSvc := service.NewHarvestService(repo, harvestClient)
 	sweeperSvc := service.NewSweeperService(repo, txManager)
 	harvestSvc.SetSweeper(sweeperSvc)
-	authSvc := service.NewAuthService(repo, issuer)
+	authSvc := service.NewAuthServiceWithLimits(repo, issuer, cfg.JWTTTL, cfg.LoginRateLimit, cfg.LoginRateWindow)
 	studentExamSvc := service.NewStudentExamService(repo)
 
 	// Rehydrate the in-memory content cache from the persisted bundles

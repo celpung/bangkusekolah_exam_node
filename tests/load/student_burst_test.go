@@ -191,7 +191,7 @@ func syntheticBundle(participantCount, itemCount int) inbound.ExamNodeBundle {
 		}
 	}
 
-	return inbound.ExamNodeBundle{
+	bundle := inbound.ExamNodeBundle{
 		BundleVersion: 1,
 		DeploymentID:  "dep-burst",
 		Exam: inbound.ExamNodeBundleExam{
@@ -206,13 +206,12 @@ func syntheticBundle(participantCount, itemCount int) inbound.ExamNodeBundle {
 			ShowResultImmediately: false,
 			ResultSelectionPolicy: entity.ResultSelectionBest,
 		},
-		Sections: []inbound.ExamNodeBundleSection{
-			{ID: "sec-1", Title: "Section 1", SortOrder: 1},
-		},
+		Sections:     []inbound.ExamNodeBundleSection{{ID: "sec-1", Title: "Section 1", SortOrder: 1}},
 		Items:        items,
 		Participants: participants,
-		Checksum:     "burst-test-checksum",
 	}
+	bundle.Checksum = service.ComputeBundleChecksum(bundle)
+	return bundle
 }
 
 func participantIDsFromBundle(b inbound.ExamNodeBundle) []string {
