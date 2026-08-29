@@ -28,7 +28,6 @@ services:
       NODE_JWT_SECRET: "${NODE_JWT_SECRET:?set a 32+ character secret}"
       CENTRAL_BASE_URL: "${CENTRAL_BASE_URL:?central base URL}"
       CENTRAL_NODE_TOKEN: "${CENTRAL_NODE_TOKEN:?node bearer token from central registration}"
-      DEPLOYMENT_ID: "${DEPLOYMENT_ID:?from central DeployExam response}"
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
