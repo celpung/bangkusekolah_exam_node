@@ -11,8 +11,8 @@
 ## D-1 Deploy
 
 1. SuperAdmin/Admin selects multiple exams and deploys them to a node in central: `POST /api/v1/exams/{id}/node-deployment` per exam (loop in `DeployExams`, Task 6) or a bulk `DeployExams` call. Mapping exam→VPS is displayed in the dashboard.
-2. On node: `go run ./cmd/bundleload --pull` pulls N bundles sequentially (one per deployment) and verifies checksum per bundle.
-3. `go run ./cmd/preflight` — must print `PASS` per bundle. If any `FAIL`, fix and rerun. Do not proceed to D-0 with a FAIL.
+2. On node: `go run ./cmd/bundleload --pull` pulls N bundles sequentially (one per deployment), verifies each checksum, and refreshes the running `examnode` cache when the process is already up. If `examnode` is stopped, the next startup rehydrates the same database snapshot.
+3. `go run ./cmd/preflight` — must print `PASS` per bundle. If any `FAIL`, fix and rerun. Do not proceed to D-0 with a `FAIL`.
 4. Verify: `curl -sf http://127.0.0.1:8080/livez` → 200, `curl -sf http://127.0.0.1:8080/readyz` → 200.
 5. Access codes are paperless — handshake is automatic via `ListStudentExams` enrichment (Task 9). `GET /api/v1/exams/{id}/node-deployment/access-codes` remains for administrative/diagnostic use only.
 

@@ -1,5 +1,6 @@
-// bundleload loads one or more exam bundles into the node database. It runs the
-// node migrations first, then verifies each checksum before replacing any bundle.
+// bundleload discovers, validates, and loads one or more exam bundles into the
+// node database. After a successful load it asks a running examnode process to
+// refresh its in-memory cache; a stopped process rehydrates the same snapshot at startup.
 package main
 
 import (
@@ -86,6 +87,13 @@ func main() {
 		if err := bundleSvc.LoadBundle(ctx, bundle); err != nil {
 			fatalf("load deployment %s: %v", bundle.DeploymentID, err)
 		}
+	}
+	if reloaded, err := notifyRuntimeReload(ctx, cfg); err != nil {
+		fatalf("reload running examnode cache: %v", err)
+	} else if reloaded {
+		fmt.Println("ok running examnode cache reloaded")
+	} else {
+		fmt.Println("ok running examnode cache reload skipped (examnode is not running)")
 	}
 	if *pull {
 		fmt.Printf("ok loaded %d deployment(s)\n", len(bundles))

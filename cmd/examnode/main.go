@@ -72,7 +72,7 @@ func main() {
 	// Compress middleware would re-wrap it, so it stays off.
 	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
-	internalH := handler.NewInternalHandler(bundleSvc)
+	internalH := handler.NewInternalHandler(bundleSvc, contentSvc)
 	harvestH := handler.NewHarvestHandler(harvestSvc)
 	readiness := node_router.NewReadinessRouter(contentSvc,
 		func() ([]string, error) {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
@@ -179,6 +180,60 @@ func (s *ContentService) RebuildExam(ctx context.Context, examID string, token .
 	s.cache[exam.ID] = &contentCache{content: content, etag: etag, gzipBytes: buf.Bytes(), rawBytes: raw}
 	delete(s.unready, exam.ID)
 	s.mu.Unlock()
+	return nil
+}
+
+// ReloadAllCaches rebuilds every persisted exam cache after an out-of-process
+// bundleload. The node server keeps cache state in memory, so a database-only
+// bundle replacement must explicitly republish the current snapshot before it
+// can serve students again.
+func (s *ContentService) ReloadAllCaches(ctx context.Context) error {
+	exams, err := s.repo.ListExams(ctx)
+	if err != nil {
+		return fmt.Errorf("list exams for cache reload: %w", err)
+	}
+	sort.Slice(exams, func(i, j int) bool { return exams[i].ID < exams[j].ID })
+
+	persisted := make(map[string]struct{}, len(exams))
+	tokens := make(map[string]uint64, len(exams))
+	s.mu.Lock()
+	for _, exam := range exams {
+		persisted[exam.ID] = struct{}{}
+	}
+	// Mark both current and incoming IDs unready before the first rebuild. This
+	// prevents a request from observing stale content during the refresh.
+	for id := range s.cache {
+		s.generation[id]++
+		s.unready[id] = fmt.Errorf("%w: cache reload in progress", node_error.ErrExamContentNotReady)
+	}
+	for _, exam := range exams {
+		s.generation[exam.ID]++
+		tokens[exam.ID] = s.generation[exam.ID]
+		s.unready[exam.ID] = fmt.Errorf("%w: cache reload in progress", node_error.ErrExamContentNotReady)
+	}
+	s.mu.Unlock()
+
+	for _, exam := range exams {
+		unlock := s.LockExam(exam.ID)
+		rebuildErr := s.RebuildExam(ctx, exam.ID, tokens[exam.ID])
+		unlock()
+		if rebuildErr != nil {
+			return fmt.Errorf("rebuild content cache for exam %s: %w", exam.ID, rebuildErr)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.cache {
+		if _, ok := persisted[id]; !ok {
+			delete(s.cache, id)
+		}
+	}
+	for id := range s.unready {
+		if _, ok := persisted[id]; !ok {
+			delete(s.unready, id)
+		}
+	}
 	return nil
 }
 

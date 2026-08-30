@@ -65,6 +65,7 @@ func NewRouter(
 	r.Route("/internal/v1", func(r chi.Router) {
 		r.Use(node_middleware.NodeTokenAuth(nodeToken))
 		r.Post("/bundle", internalHandler.PushBundle)
+		r.Post("/cache/reload", internalHandler.ReloadCache)
 		r.Post("/harvest/force", harvestHandler.Force)
 	})
 
