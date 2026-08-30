@@ -65,7 +65,7 @@ func TestIntegration_ReadyzEmptyNodeFailsClosed(t *testing.T) {
 			return ids, nil
 		},
 		func() error { return db.Error })
-	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
+	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, nil, nil, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
 
 	getReadyz := func() int {
 		w := httptest.NewRecorder()

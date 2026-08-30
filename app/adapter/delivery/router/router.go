@@ -15,37 +15,23 @@ import (
 // NewRouter assembles the full node HTTP surface: the student sitting flow
 // under the JWT middleware, the public auth route outside it, and internal
 // central→node routes under the shared node token.
-// authUC and studentUC are optional variadic to preserve backward compatibility
-// with existing handler tests that call the 7-arg form: if supplied they are
-// wired as POST /api/v1/auth/exam-login and GET/POST student exam routes.
+//
+// fenceRepos is optional for backwards-compatible handler tests; production
+// wiring always supplies the node repository so fenced deployments are rejected
+// before any student request reaches a usecase.
 func NewRouter(
 	issuer outbound.JWTIssuer,
 	nodeToken string,
+	authUC inbound.AuthUsecase,
+	studentUC inbound.StudentExamUsecase,
 	contentUC inbound.ContentUsecase,
 	attemptUC inbound.AttemptUsecase,
 	integrityUC inbound.IntegrityUsecase,
 	internalHandler *handler.InternalHandler,
 	harvestHandler *handler.HarvestHandler,
 	readiness http.Handler,
-	extra ...interface{},
+	fenceRepos ...outbound_repository.DeploymentFenceRepository,
 ) http.Handler {
-	var authUC inbound.AuthUsecase
-	var studentUC inbound.StudentExamUsecase
-	var fenceRepo outbound_repository.DeploymentFenceRepository
-	if len(extra) > 0 {
-		if v, ok := extra[0].(inbound.AuthUsecase); ok {
-			authUC = v
-		}
-	}
-	if len(extra) > 1 {
-		if v, ok := extra[1].(inbound.StudentExamUsecase); ok {
-			studentUC = v
-		}
-	}
-	if len(extra) > 2 {
-		fenceRepo, _ = extra[2].(outbound_repository.DeploymentFenceRepository)
-	}
-
 	r := chi.NewRouter()
 
 	r.Mount("/", readiness)
@@ -56,12 +42,11 @@ func NewRouter(
 	}
 
 	r.Route("/api/v1/student", func(r chi.Router) {
-		if fenceRepo != nil {
-			r.Use(node_middleware.AuthMiddleware(issuer, fenceRepo))
+		if len(fenceRepos) > 0 && fenceRepos[0] != nil {
+			r.Use(node_middleware.AuthMiddleware(issuer, fenceRepos[0]))
 		} else {
 			r.Use(node_middleware.AuthMiddleware(issuer))
 		}
-		// Student exam list/start are token-scoped
 		if studentUC != nil && attemptUC != nil {
 			studentH := handler.NewStudentExamHandler(studentUC, attemptUC)
 			r.Get("/exams", studentH.ListExams)

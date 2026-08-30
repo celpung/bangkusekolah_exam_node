@@ -42,6 +42,7 @@ func main() {
 	}
 
 	repo := repository.NewNodeRepository(db)
+	fenceRepo, _ := repo.(outbound_repository.DeploymentFenceRepository)
 	txManager := helper.NewTxManager(db)
 	idGen := &uuidGenerator{}
 	issuer := node_security.NewJWTIssuer(cfg)
@@ -86,7 +87,19 @@ func main() {
 			return ids, nil
 		},
 		sqlDB.Ping)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness, authSvc, studentExamSvc, repo))
+	r.Mount("/", node_router.NewRouter(
+		issuer,
+		cfg.CentralNodeToken,
+		authSvc,
+		studentExamSvc,
+		contentSvc,
+		attemptSvc,
+		integritySvc,
+		internalH,
+		harvestH,
+		readiness,
+		fenceRepo,
+	))
 
 	// Background workers: sweeper drains expired attempts each tick; harvest
 	// pushes finished work to central every cfg.HarvestInterval (default 5m).

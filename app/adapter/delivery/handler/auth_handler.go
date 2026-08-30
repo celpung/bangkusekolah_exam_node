@@ -48,7 +48,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		default:
 			delivery_helper.HandleError(w, err)
-			// Ensure unhandled maps to 500 if not already
 			return
 		}
 	}

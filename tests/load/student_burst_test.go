@@ -6,6 +6,8 @@ package load
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
+	"gorm.io/gorm"
 )
 
 // TestBurst simulates the D-0 minute-zero herd: 1000 students start an
@@ -28,18 +31,25 @@ func TestBurst(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skip burst load test in -short")
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		t.Skipf("no node config: %v", err)
-	}
+	cfg := loadTestConfig(t)
 	db, err := provider.Connect(cfg)
 	if err != nil {
-		t.Skipf("no database: %v", err)
+		t.Fatalf("connect test database: %v", err)
 	}
-	sqlDB, _ := db.DB()
-	defer sqlDB.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	verifyLoadTestDatabase(t, db)
+	if err := provider.Run(sqlDB); err != nil {
+		t.Fatalf("run node migrations: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupBurstData(t, db)
+		_ = sqlDB.Close()
+	})
+	cleanupBurstData(t, db)
 
-	// Seed: one exam (40 items) + 1000 participants via synthetic bundle.
 	bundle := syntheticBundle(1000, 40)
 	repo := repository.NewNodeRepository(db)
 	txManager := helper.NewTxManager(db)
@@ -93,9 +103,15 @@ func TestBurst(t *testing.T) {
 	for i := 0; i < students; i++ {
 		go func(pid string) {
 			defer wg.Done()
-			att, _ := repo.FindActiveAttemptByParticipant(context.Background(), pid)
+			att, err := repo.FindActiveAttemptByParticipant(context.Background(), pid)
+			if err != nil {
+				errors.Add(1)
+				t.Logf("FindActiveAttemptByParticipant %s: %v", pid, err)
+				return
+			}
 			if att == nil {
 				errors.Add(1)
+				t.Logf("FindActiveAttemptByParticipant %s: nil attempt", pid)
 				return
 			}
 			for j, item := range bundle.Items {
@@ -127,9 +143,15 @@ func TestBurst(t *testing.T) {
 	for i := 0; i < students; i++ {
 		go func(pid string) {
 			defer wg.Done()
-			att, _ := repo.FindActiveAttemptByParticipant(context.Background(), pid)
+			att, err := repo.FindActiveAttemptByParticipant(context.Background(), pid)
+			if err != nil {
+				errors.Add(1)
+				t.Logf("FindActiveAttemptByParticipant %s: %v", pid, err)
+				return
+			}
 			if att == nil {
 				errors.Add(1)
+				t.Logf("FindActiveAttemptByParticipant %s: nil attempt", pid)
 				return
 			}
 			if _, err := attemptSvc.SubmitAttempt(context.Background(), att.ID, pid); err != nil {
@@ -147,6 +169,7 @@ func TestBurst(t *testing.T) {
 	if done.Load() != students {
 		t.Fatalf("submit: %d/%d, errors %d", done.Load(), students, errors.Load())
 	}
+	assertBurstCounts(t, db, students, len(bundle.Items))
 
 	// Gate: entire burst must complete within 90s on 4 vCPU.
 	totalElapsed := time.Since(start)
@@ -154,6 +177,88 @@ func TestBurst(t *testing.T) {
 		t.Fatalf("burst took %v, want <90s", totalElapsed)
 	}
 	t.Logf("Burst complete: %d students, 3 phases in %v", students, totalElapsed)
+}
+
+func assertBurstCounts(t *testing.T, db *gorm.DB, wantStudents, itemsPerStudent int) {
+	t.Helper()
+	var submitted, attempts, answers, duplicateIdentity int64
+	checks := []struct {
+		name  string
+		query string
+		want  int64
+	}{
+		{"submitted attempts", "SELECT COUNT(*) FROM attempts WHERE exam_id = ? AND status = 'submitted'", int64(wantStudents)},
+		{"attempts", "SELECT COUNT(*) FROM attempts WHERE exam_id = ?", int64(wantStudents)},
+		{"answers", "SELECT COUNT(*) FROM answers a JOIN attempts t ON t.id = a.attempt_id WHERE t.exam_id = ?", int64(wantStudents * itemsPerStudent)},
+	}
+	values := []*int64{&submitted, &attempts, &answers}
+	for i, check := range checks {
+		if err := db.Raw(check.query, "exam-burst").Scan(values[i]).Error; err != nil {
+			t.Fatalf("count %s: %v", check.name, err)
+		}
+		if *values[i] != check.want {
+			t.Fatalf("count %s = %d, want %d", check.name, *values[i], check.want)
+		}
+	}
+	if err := db.Raw("SELECT COUNT(*) FROM (SELECT participant_id, attempt_no FROM attempts WHERE exam_id = ? GROUP BY participant_id, attempt_no HAVING COUNT(*) > 1) duplicates", "exam-burst").Scan(&duplicateIdentity).Error; err != nil {
+		t.Fatalf("count duplicate attempt identities: %v", err)
+	}
+	if duplicateIdentity != 0 {
+		t.Fatalf("found %d duplicate (participant_id, attempt_no) identities", duplicateIdentity)
+	}
+}
+
+func loadTestConfig(t *testing.T) *config.Config {
+	t.Helper()
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		t.Fatal("TEST_DB_DSN is required for the load test")
+	}
+	t.Setenv("DB_DSN", dsn)
+	if os.Getenv("NODE_JWT_SECRET") == "" {
+		t.Setenv("NODE_JWT_SECRET", "load-test-jwt-secret-0123456789")
+	}
+	if os.Getenv("CENTRAL_BASE_URL") == "" {
+		t.Setenv("CENTRAL_BASE_URL", "https://load-test.invalid")
+	}
+	if os.Getenv("CENTRAL_NODE_TOKEN") == "" {
+		t.Setenv("CENTRAL_NODE_TOKEN", "load-test-node-token")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load test config: %v", err)
+	}
+	return cfg
+}
+
+func verifyLoadTestDatabase(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var actualName string
+	if err := db.Raw("SELECT DATABASE()").Scan(&actualName).Error; err != nil {
+		t.Fatalf("read connected database name: %v", err)
+	}
+	if actualName == "" || !strings.HasSuffix(actualName, "_test") {
+		t.Fatalf("refusing load test on non-test database %q", actualName)
+	}
+}
+
+func cleanupBurstData(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const examID = "exam-burst"
+	queries := []string{
+		"DELETE FROM harvest_log WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id = ?)",
+		"DELETE FROM integrity_events WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id = ?)",
+		"DELETE FROM answers WHERE attempt_id IN (SELECT id FROM attempts WHERE exam_id = ?)",
+		"DELETE FROM attempts WHERE exam_id = ?",
+		"DELETE FROM participants WHERE exam_id = ?",
+		"DELETE FROM items WHERE exam_id = ?",
+		"DELETE FROM exams WHERE id = ?",
+	}
+	for _, query := range queries {
+		if err := db.Exec(query, examID).Error; err != nil {
+			t.Errorf("cleanup burst data: %v", err)
+		}
+	}
 }
 
 // syntheticBundle builds a bundle with `itemCount` single_choice items and
@@ -175,7 +280,7 @@ func syntheticBundle(participantCount, itemCount int) inbound.ExamNodeBundle {
 				{"label": "C", "value": "C"},
 				{"label": "D", "value": "D"},
 			},
-			AnswerKeySnapshotJSON: map[string]interface{}{"correct": "A"},
+			AnswerKeySnapshotJSON: map[string]interface{}{"answer": "A"},
 			Points:                10,
 			SortOrder:             i + 1,
 		}

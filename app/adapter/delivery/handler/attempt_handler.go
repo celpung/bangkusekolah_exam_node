@@ -23,6 +23,30 @@ func NewAttemptHandler(uc inbound.AttemptUsecase, integrityUC inbound.IntegrityU
 	return &AttemptHandler{attemptUC: uc, integrityUC: integrityUC}
 }
 
+// Start creates or returns the participant's active attempt for the exam in
+// the JWT. The service remains the authority for the exam window and attempt
+// limit; the handler only enforces URL/JWT exam scoping.
+func (h *AttemptHandler) Start(w http.ResponseWriter, r *http.Request) {
+	pid, _ := middleware.ParticipantIDFromContext(r.Context())
+	examID := chi.URLParam(r, "examId")
+	if tokenExamID, ok := middleware.ExamIDFromContext(r.Context()); !ok || tokenExamID != examID {
+		delivery_helper.Error(w, http.StatusForbidden, "exam does not belong to your token")
+		return
+	}
+	attempt, err := h.attemptUC.StartAttempt(r.Context(), pid, examID)
+	if err != nil {
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	resp := dto.AttemptResponse{
+		ID: attempt.ID, ExamID: attempt.ExamID, AttemptNo: attempt.AttemptNo,
+		Status: string(attempt.Status), StartedAt: attempt.StartedAt, DueAt: attempt.DueAt,
+		SubmittedAt: attempt.SubmittedAt, AutoSubmittedAt: attempt.AutoSubmittedAt,
+		Score: attempt.Score, MaxScore: attempt.MaxScore, GradingStatus: string(attempt.GradingStatus),
+	}
+	delivery_helper.Success(w, http.StatusOK, "attempt started", resp)
+}
+
 // GetState returns the caller's attempt with answers and server_time. The
 // participant id comes from the JWT context, so a student can only read their
 // own attempt — the service enforces ownership again as defense in depth.
