@@ -49,7 +49,9 @@ func (f *fakeSubmitRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) err
 }
 func (f *fakeSubmitRepo) FindExam(_ context.Context) (*entity.Exam, error) { return f.exam, nil }
 func (f *fakeSubmitRepo) FindExamByID(_ context.Context, id string) (*entity.Exam, error) {
-	if f.exam != nil && f.exam.ID == id { return f.exam, nil }
+	if f.exam != nil && f.exam.ID == id {
+		return f.exam, nil
+	}
 	return nil, node_error.ErrExamNotLoaded
 }
 

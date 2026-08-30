@@ -96,12 +96,12 @@ func TestJWTIssuerRejectsMissingIdentityClaims(t *testing.T) {
 	issuer := NewJWTIssuer(testConfig())
 	now := time.Now().Unix()
 	cases := map[string]jwt.MapClaims{
-		"missing sid":     {"pid": "part-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
-		"missing exam_id": {"pid": "part-1", "sid": "stu-1", "iat": now, "exp": now + 3600},
+		"missing sid":           {"pid": "part-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
+		"missing exam_id":       {"pid": "part-1", "sid": "stu-1", "iat": now, "exp": now + 3600},
 		"missing deployment_id": {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
-		"missing exp":     {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now},
-		"missing iat":     {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "exp": now + 3600},
-		"zero exp":        {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now, "exp": 0},
+		"missing exp":           {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now},
+		"missing iat":           {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "exp": now + 3600},
+		"zero exp":              {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now, "exp": 0},
 	}
 	for name, claims := range cases {
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
