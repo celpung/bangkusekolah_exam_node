@@ -130,6 +130,9 @@ func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID s
 	if err != nil {
 		return nil, err
 	}
+	if item.ExamID != "" && item.ExamID != attempt.ExamID {
+		return nil, node_error.ErrForbidden
+	}
 	score, graded := grading.GradeObjectiveAnswer(*item, &entity.Answer{AnswerJSON: answerJSON})
 	var scorePtr *float64
 	gradingStatus := entity.GradingPending

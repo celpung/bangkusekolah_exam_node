@@ -270,6 +270,50 @@ func TestGetAttemptStateReturnsAttemptPlusAnswersAndServerTime(t *testing.T) {
 	}
 }
 
+func TestGetAttemptStateUsesFrozenSnakeCaseResponse(t *testing.T) {
+	now := time.Date(2026, 8, 29, 8, 10, 0, 0, time.UTC)
+	state := &inbound.AttemptState{
+		Attempt: &entity.Attempt{
+			ID: "att-1", ExamID: "exam-a", AttemptNo: 1,
+			Status: entity.AttemptInProgress, MaxScore: 10,
+			StartedAt: now, DueAt: now.Add(time.Hour),
+		},
+		Answers: []entity.Answer{{
+			ID: "ans-1", ItemID: "item-1", AnswerJSON: map[string]interface{}{"answer": "B"},
+			ClientSeq: 7, LastSavedAt: now,
+		}},
+		ServerTime: now,
+	}
+	router := newContentRouter(&fakeContentUC{}, &fakeAttemptUC{state: state})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/student/exam-attempts/att-1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	var envelope struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode state response: %v body=%q", err, rec.Body.String())
+	}
+	if _, ok := envelope.Data["Attempt"]; ok {
+		t.Fatal("state response must not serialize the domain Attempt field")
+	}
+	if envelope.Data["id"] != "att-1" || envelope.Data["exam_id"] != "exam-a" {
+		t.Fatalf("state identity is not snake_case: %#v", envelope.Data)
+	}
+	answers, ok := envelope.Data["answers"].([]interface{})
+	if !ok || len(answers) != 1 {
+		t.Fatalf("state answers malformed: %#v", envelope.Data["answers"])
+	}
+	answer, ok := answers[0].(map[string]interface{})
+	if !ok || answer["item_id"] != "item-1" {
+		t.Fatalf("answer is not snake_case: %#v", answers[0])
+	}
+	if _, ok := answer["ItemID"]; ok {
+		t.Fatal("answer response must not serialize domain field names")
+	}
+}
+
 func TestGetAttemptStateRejectsForeignAttemptAsForbidden(t *testing.T) {
 	router := newContentRouter(&fakeContentUC{}, &fakeAttemptUC{err: node_error.ErrForbidden})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/student/exam-attempts/att-other", nil)

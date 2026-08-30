@@ -134,13 +134,25 @@ func (s *ContentService) RebuildExam(ctx context.Context, examID string, token .
 	}
 	// Deterministic JSON — encoding/json emits struct fields in declaration
 	// order and map keys sorted, so the ETag is stable across restarts.
-	raw, err := json.Marshal(content)
+	// The public content contract is the flattened item array. The cached exam
+	// metadata remains available to readiness/internal callers, but must not be
+	// serialized as a student-facing object (and must never include answer keys).
+	raw, err := json.Marshal(content.Items)
 	if err != nil {
 		err = fmt.Errorf("marshal content: %w", err)
 		s.markUnready(examID, err)
 		return err
 	}
-	sum := sha256.Sum256(raw)
+	etagView, err := json.Marshal(struct {
+		ExamID string                `json:"exam_id"`
+		Items  []inbound.ExamItemDTO `json:"items"`
+	}{ExamID: exam.ID, Items: content.Items})
+	if err != nil {
+		err = fmt.Errorf("marshal content etag view: %w", err)
+		s.markUnready(examID, err)
+		return err
+	}
+	sum := sha256.Sum256(etagView)
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"` // quoted per RFC 7232
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)

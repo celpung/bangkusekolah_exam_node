@@ -34,7 +34,7 @@ func (h *AttemptHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		delivery_helper.HandleError(w, err)
 		return
 	}
-	delivery_helper.Success(w, http.StatusOK, "attempt retrieved", state)
+	delivery_helper.Success(w, http.StatusOK, "attempt retrieved", dto.NewAttemptStateResponse(state))
 }
 
 // Autosave writes one answer. A stale client_seq is a 200 no-op — the client

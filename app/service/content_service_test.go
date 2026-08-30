@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -100,6 +101,30 @@ func TestContentUnknownExamIsNotLoaded(t *testing.T) {
 	}
 	if _, _, _, _, err := svc.GetExamContent(context.Background(), "exam-unknown"); !errors.Is(err, node_error.ErrExamNotLoaded) {
 		t.Fatalf("unknown exam must be ErrExamNotLoaded, got %v", err)
+	}
+}
+
+func TestContentRawBytesFollowStudentContentContract(t *testing.T) {
+	svc, _ := contentFixture()
+	if err := svc.RebuildExam(context.Background(), "exam-a"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	_, _, _, raw, err := svc.GetExamContent(context.Background(), "exam-a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatalf("student content must be a JSON array: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("student content item count = %d, want 2", len(items))
+	}
+	if _, ok := items[0]["answer_key_snapshot_json"]; ok {
+		t.Fatal("student content must not expose answer keys")
+	}
+	if _, ok := items[0]["rubric_criteria"]; ok {
+		t.Fatal("student content must not expose rubric criteria")
 	}
 }
 
