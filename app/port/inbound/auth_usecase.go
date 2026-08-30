@@ -16,3 +16,7 @@ type AuthUsecase interface {
 	// Login is the only auth entry. The node has no password reset, no refresh,
 	// no logout — the JWT lives 90m and the exam is at most 3 hours.
 }
+
+type RateLimitedAuthUsecase interface {
+	LoginWithKey(ctx context.Context, code, clientKey string) (*LoginResult, error)
+}

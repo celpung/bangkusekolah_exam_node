@@ -13,6 +13,8 @@ import (
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 )
 
+const maxRateLimitKeys = 4096
+
 type AuthService struct {
 	repo   outbound_repository.NodeRepository
 	issuer outbound.JWTIssuer
@@ -49,6 +51,24 @@ func (s *AuthService) allow(key string) bool {
 		}
 	}
 	h = h[:n]
+	if len(s.hits) >= maxRateLimitKeys {
+		if _, exists := s.hits[key]; !exists {
+			var oldestKey string
+			var oldest time.Time
+			for candidate, timestamps := range s.hits {
+				if len(timestamps) == 0 {
+					oldestKey = candidate
+					break
+				}
+				candidateOldest := timestamps[0]
+				if oldestKey == "" || candidateOldest.Before(oldest) {
+					oldestKey = candidate
+					oldest = candidateOldest
+				}
+			}
+			delete(s.hits, oldestKey)
+		}
+	}
 	if len(h) >= s.limit {
 		s.hits[key] = h
 		return false
@@ -62,6 +82,21 @@ func (s *AuthService) allow(key string) bool {
 // shape, resolves the participant first, then loads the participant's exam by ID.
 // DeploymentID travels in the JWT per the frozen contract (W2-T2).
 func (s *AuthService) Login(ctx context.Context, rawCode string) (*inbound.LoginResult, error) {
+	codeKey := strings.ToUpper(strings.TrimSpace(rawCode))
+	return s.login(ctx, rawCode, "code:"+codeKey)
+}
+
+func (s *AuthService) LoginWithKey(ctx context.Context, rawCode, clientKey string) (*inbound.LoginResult, error) {
+	key := strings.TrimSpace(clientKey)
+	if key == "" {
+		key = "code:" + strings.ToUpper(strings.TrimSpace(rawCode))
+	} else {
+		key = "client:" + key
+	}
+	return s.login(ctx, rawCode, key)
+}
+
+func (s *AuthService) login(ctx context.Context, rawCode, rateKey string) (*inbound.LoginResult, error) {
 	code := strings.ToUpper(strings.TrimSpace(rawCode))
 	parts := strings.Split(code, "-")
 	if len(parts) != 2 || len(parts[0]) != 6 || len(parts[1]) != 6 {
@@ -70,7 +105,7 @@ func (s *AuthService) Login(ctx context.Context, rawCode string) (*inbound.Login
 	if strings.ContainsAny(code, "ILOU") {
 		return nil, node_error.ErrInvalidAccessCode
 	}
-	if !s.allow(code) {
+	if !s.allow(rateKey) {
 		return nil, node_error.ErrTooManyAttempts
 	}
 	participant, err := s.repo.FindParticipantByAccessCode(ctx, code)

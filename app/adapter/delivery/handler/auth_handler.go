@@ -2,7 +2,9 @@ package handler
 
 import (
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/dto"
 	delivery_helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/helper"
@@ -26,7 +28,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if !delivery_helper.DecodeJSON(w, r, &req) {
 		return
 	}
-	result, err := h.authUC.Login(r.Context(), req.Code)
+	var result *inbound.LoginResult
+	var err error
+	if rateLimited, ok := h.authUC.(inbound.RateLimitedAuthUsecase); ok {
+		result, err = rateLimited.LoginWithKey(r.Context(), req.Code, clientRateKey(r))
+	} else {
+		result, err = h.authUC.Login(r.Context(), req.Code)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, node_error.ErrInvalidAccessCode), errors.Is(err, node_error.ErrUnauthorized):
@@ -45,4 +53,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	delivery_helper.Success(w, http.StatusOK, "login successful", result)
+}
+
+func clientRateKey(r *http.Request) string {
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
+		return host
+	}
+	if remote != "" {
+		return remote
+	}
+	return "unknown"
 }

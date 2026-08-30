@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestLoginNormalizesCodeAndRejectsWrongSuffix(t *testing.T) {
 	if _, err := svc.Login(context.Background(), " k7m2qx-3b9ftd "); err != nil {
 		t.Fatalf("normalized login: %v", err)
 	}
-	if _, err := svc.Login(context.Background(), "K7M2QX-WRONG1"); !errors.Is(err, node_error.ErrInvalidAccessCode) {
+	if _, err := svc.Login(context.Background(), "K7M2QX-WRNG22"); !errors.Is(err, node_error.ErrInvalidAccessCode) {
 		t.Fatalf("wrong suffix: got %v, want ErrInvalidAccessCode", err)
 	}
 }
@@ -127,13 +128,44 @@ func TestLoginIsConstantTimeForUnknownCode(t *testing.T) {
 	// way that leaks timing. This test asserts the error is identical in both
 	// cases so a future refactor does not reintroduce an oracle.
 	svc, _ := authFixture()
-	_, err1 := svc.Login(context.Background(), "K7M2QX-WRONG1")
+	_, err1 := svc.Login(context.Background(), "K7M2QX-WRNG22")
 	_, err2 := svc.Login(context.Background(), "XXXXXX-WRONG1")
 	if !errors.Is(err1, node_error.ErrInvalidAccessCode) || !errors.Is(err2, node_error.ErrInvalidAccessCode) {
 		t.Fatalf("both must be ErrInvalidAccessCode: %v / %v", err1, err2)
 	}
 	if err1.Error() != err2.Error() {
 		t.Fatalf("error messages must be identical: %q vs %q", err1.Error(), err2.Error())
+	}
+}
+
+func TestLoginWithKeyRateLimitsByClientAcrossDifferentCodes(t *testing.T) {
+	svc, _ := authFixture()
+	svc.limit = 1
+
+	_, firstErr := svc.LoginWithKey(context.Background(), "K7M2QX-WRNG22", "192.0.2.10")
+	if !errors.Is(firstErr, node_error.ErrInvalidAccessCode) {
+		t.Fatalf("first invalid code should reach code validation, got %v", firstErr)
+	}
+	_, sameClientErr := svc.LoginWithKey(context.Background(), "K7M2QX-WRNG23", "192.0.2.10")
+	if !errors.Is(sameClientErr, node_error.ErrTooManyAttempts) {
+		t.Fatalf("same client must be rate-limited across codes, got %v", sameClientErr)
+	}
+	_, otherClientErr := svc.LoginWithKey(context.Background(), "K7M2QX-WRNG23", "192.0.2.11")
+	if !errors.Is(otherClientErr, node_error.ErrInvalidAccessCode) {
+		t.Fatalf("different client should have its own bucket, got %v", otherClientErr)
+	}
+}
+
+func TestLoginRateLimitKeyStoreIsBounded(t *testing.T) {
+	svc, _ := authFixture()
+	svc.limit = 1
+	for i := 0; i < maxRateLimitKeys+64; i++ {
+		if !svc.allow(fmt.Sprintf("client:%d", i)) {
+			t.Fatalf("new key %d should fit its empty bucket", i)
+		}
+	}
+	if len(svc.hits) > maxRateLimitKeys {
+		t.Fatalf("rate-limit key store grew to %d, max %d", len(svc.hits), maxRateLimitKeys)
 	}
 }
 
