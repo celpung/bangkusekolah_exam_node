@@ -51,3 +51,10 @@ type NodeRepository interface {
 	LogHarvestFailure(ctx context.Context, attemptID, deploymentID string, attemptsCount int, errMsg string) error
 	ListIntegrityEventsByAttempt(ctx context.Context, attemptID string) ([]entity.IntegrityEvent, error)
 }
+
+// AttemptDeviceBinder atomically claims an unbound in-progress attempt for
+// one app installation. It is optional so small in-memory test doubles can
+// continue to use UpdateAttempt.
+type AttemptDeviceBinder interface {
+	BindAttemptDevice(ctx context.Context, attemptID, deviceID string) error
+}

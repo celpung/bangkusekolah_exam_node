@@ -178,6 +178,7 @@ func (r *nodeRepository) UpdateAttempt(ctx context.Context, a *entity.Attempt) e
 	// Conditional on in_progress: whoever finalizes second is a no-op, so
 	// submit and sweeper can never overwrite each other's final state.
 	res := db.Model(&model.Attempt{}).Where("id = ? AND status = ?", a.ID, string(entity.AttemptInProgress)).Updates(map[string]interface{}{
+		"device_id":         m.DeviceID,
 		"status":            m.Status,
 		"submitted_at":      m.SubmittedAt,
 		"auto_submitted_at": m.AutoSubmittedAt,
@@ -191,6 +192,27 @@ func (r *nodeRepository) UpdateAttempt(ctx context.Context, a *entity.Attempt) e
 		return node_error.ErrAttemptLocked
 	}
 	return nil
+}
+
+func (r *nodeRepository) BindAttemptDevice(ctx context.Context, attemptID, deviceID string) error {
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.Attempt{}).
+		Where("id = ? AND status = ? AND (device_id IS NULL OR device_id = ?)", attemptID, string(entity.AttemptInProgress), deviceID).
+		Update("device_id", deviceID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	current, err := r.FindAttemptByID(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	if current.Status == entity.AttemptInProgress && current.DeviceID == deviceID {
+		return nil
+	}
+	return node_error.ErrAttemptDeviceMismatch
 }
 
 func (r *nodeRepository) ListExpiredAttempts(ctx context.Context, now time.Time) ([]entity.Attempt, error) {

@@ -25,6 +25,9 @@ type fakeSittingAttemptUC struct {
 func (f *fakeSittingAttemptUC) StartAttempt(_ context.Context, _, _ string) (*entity.Attempt, error) {
 	return nil, nil
 }
+func (f *fakeSittingAttemptUC) StartAttemptWithDevice(_ context.Context, _, _, _ string) (*entity.Attempt, error) {
+	return nil, nil
+}
 func (f *fakeSittingAttemptUC) GetAttemptState(_ context.Context, _, _ string) (*inbound.AttemptState, error) {
 	return nil, nil
 }

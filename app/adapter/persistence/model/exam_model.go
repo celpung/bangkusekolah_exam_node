@@ -58,10 +58,12 @@ type Participant struct {
 func (Participant) TableName() string { return "participants" }
 
 type Attempt struct {
-	ID              string     `gorm:"primaryKey;type:varchar(36)"`
-	ParticipantID   string     `gorm:"type:varchar(36);not null;index:idx_attempts_exam,priority:2"`
-	StudentID       string     `gorm:"type:varchar(36);not null"`
-	ExamID          string     `gorm:"type:varchar(36);not null;default:'';index:idx_attempts_exam,priority:1"`
+	ID            string `gorm:"primaryKey;type:varchar(36)"`
+	ParticipantID string `gorm:"type:varchar(36);not null;index:idx_attempts_exam,priority:2"`
+	StudentID     string `gorm:"type:varchar(36);not null"`
+	ExamID        string `gorm:"type:varchar(36);not null;default:'';index:idx_attempts_exam,priority:1"`
+	// Nullable for attempts created before device binding was introduced.
+	DeviceID        *string    `gorm:"type:varchar(128);index"`
 	AttemptNo       int        `gorm:"not null;index:idx_attempts_exam,priority:3"`
 	Status          string     `gorm:"type:varchar(30);not null;index"`
 	StartedAt       time.Time  `gorm:"type:datetime;not null"`

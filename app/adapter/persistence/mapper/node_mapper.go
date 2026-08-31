@@ -55,14 +55,28 @@ func ToAttemptEntity(m *model.Attempt) *entity.Attempt {
 	if m == nil {
 		return nil
 	}
-	return &entity.Attempt{ID: m.ID, ParticipantID: m.ParticipantID, StudentID: m.StudentID, ExamID: m.ExamID, AttemptNo: m.AttemptNo, Status: entity.AttemptStatus(m.Status), StartedAt: m.StartedAt, DueAt: m.DueAt, SubmittedAt: m.SubmittedAt, AutoSubmittedAt: m.AutoSubmittedAt, Score: m.Score, MaxScore: m.MaxScore, GradingStatus: entity.GradingStatus(m.GradingStatus), HarvestedAt: m.HarvestedAt}
+	return &entity.Attempt{ID: m.ID, ParticipantID: m.ParticipantID, StudentID: m.StudentID, ExamID: m.ExamID, DeviceID: attemptDeviceID(m.DeviceID), AttemptNo: m.AttemptNo, Status: entity.AttemptStatus(m.Status), StartedAt: m.StartedAt, DueAt: m.DueAt, SubmittedAt: m.SubmittedAt, AutoSubmittedAt: m.AutoSubmittedAt, Score: m.Score, MaxScore: m.MaxScore, GradingStatus: entity.GradingStatus(m.GradingStatus), HarvestedAt: m.HarvestedAt}
 }
 
 func ToAttemptModel(e *entity.Attempt) *model.Attempt {
 	if e == nil {
 		return nil
 	}
-	return &model.Attempt{ID: e.ID, ParticipantID: e.ParticipantID, StudentID: e.StudentID, ExamID: e.ExamID, AttemptNo: e.AttemptNo, Status: string(e.Status), StartedAt: e.StartedAt, DueAt: e.DueAt, SubmittedAt: e.SubmittedAt, AutoSubmittedAt: e.AutoSubmittedAt, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), HarvestedAt: e.HarvestedAt}
+	return &model.Attempt{ID: e.ID, ParticipantID: e.ParticipantID, StudentID: e.StudentID, ExamID: e.ExamID, DeviceID: nullableAttemptDeviceID(e.DeviceID), AttemptNo: e.AttemptNo, Status: string(e.Status), StartedAt: e.StartedAt, DueAt: e.DueAt, SubmittedAt: e.SubmittedAt, AutoSubmittedAt: e.AutoSubmittedAt, Score: e.Score, MaxScore: e.MaxScore, GradingStatus: string(e.GradingStatus), HarvestedAt: e.HarvestedAt}
+}
+
+func attemptDeviceID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func nullableAttemptDeviceID(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func ToAnswerEntity(m *model.Answer) *entity.Answer {
