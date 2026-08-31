@@ -98,7 +98,7 @@ func ToIntegrityEventEntity(m *model.IntegrityEvent) *entity.IntegrityEvent {
 	if m.MetadataJSON != nil {
 		_ = json.Unmarshal([]byte(*m.MetadataJSON), &meta)
 	}
-	var desc *string
+	desc := m.Description
 	return &entity.IntegrityEvent{ID: m.ID, AttemptID: m.AttemptID, StudentID: m.StudentID, EventType: m.EventType, Description: desc, MetadataJSON: meta, CreatedAt: m.CreatedAt}
 }
 
