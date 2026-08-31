@@ -1,5 +1,18 @@
 # Exam Node Runbook
 
+## One-command production setup
+
+After the node has been registered in Central and the repository is available on the VPS:
+
+```bash
+cd /opt/bangkusekolah/exam-node
+sudo ./setup.sh -central_url https://central.example.id
+```
+
+The script prompts for `CENTRAL_NODE_TOKEN` without echoing it and generates `NODE_JWT_SECRET` when it is not already present in `.env`. It installs/verifies Docker, builds `bundleload`, `preflight`, and `examharvest` inside a temporary Go container, starts the Compose stack, enables systemd startup, pulls bundles, runs preflight, and checks readiness. Go is not installed on the VPS host.
+
+Use `-skip_pull` only when no exam has been deployed to the node yet. Use `-skip_preflight` only for infrastructure preparation; it is not a production readiness result.
+
 ## D-3 Provision
 
 0. From a developer/CI checkout (not on the VPS), build the static operational tools:
