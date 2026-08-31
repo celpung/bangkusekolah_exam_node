@@ -91,6 +91,12 @@ func (f *fakeNodeRepo) CountAttemptsByParticipant(_ context.Context, pid string)
 	return n, nil
 }
 
+func (f *fakeNodeRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) error {
+	f.updateCalls++
+	f.attempts[a.ID] = a
+	return nil
+}
+
 type stubNodeTx struct{ fail bool }
 
 func (s stubNodeTx) Atomic(_ context.Context, fn func(context.Context) error) error {
@@ -153,6 +159,42 @@ func TestStartAttemptResumesActiveAttempt(t *testing.T) {
 	}
 	if att.ID != "att-old" || repo.createCalls != 0 {
 		t.Fatalf("resume must return existing attempt without insert: got %q calls %d", att.ID, repo.createCalls)
+	}
+}
+
+func TestStartAttemptWithDeviceStoresAndResumesOnlyOnTheSameDevice(t *testing.T) {
+	repo := &fakeNodeRepo{
+		exam:         nodeExam(),
+		participants: map[string]*entity.Participant{"part-1": nodeParticipant()},
+		attempts:     map[string]*entity.Attempt{},
+		answers:      map[string][]entity.Answer{},
+	}
+	svc := newAttemptService(repo)
+
+	created, err := svc.StartAttemptWithDevice(context.Background(), "part-1", "exam-1", "install-1")
+	if err != nil {
+		t.Fatalf("device-bound start: %v", err)
+	}
+	if created.DeviceID != "install-1" {
+		t.Fatalf("created device binding = %q, want install-1", created.DeviceID)
+	}
+
+	resumed, err := svc.StartAttemptWithDevice(context.Background(), "part-1", "exam-1", "install-1")
+	if err != nil || resumed.ID != created.ID {
+		t.Fatalf("same-device resume = (%v, %v), want %q", resumed, err, created.ID)
+	}
+	if _, err := svc.StartAttemptWithDevice(context.Background(), "part-1", "exam-1", "install-2"); !errors.Is(err, node_error.ErrAttemptDeviceMismatch) {
+		t.Fatalf("different-device resume error = %v, want device mismatch", err)
+	}
+}
+
+func TestStartAttemptWithDeviceRequiresDeviceID(t *testing.T) {
+	repo := &fakeNodeRepo{}
+	_, err := newAttemptService(repo).StartAttemptWithDevice(
+		context.Background(), "part-1", "exam-1", "  ",
+	)
+	if !errors.Is(err, node_error.ErrAttemptDeviceIDInvalid) {
+		t.Fatalf("empty device id error = %v, want ErrAttemptDeviceIDInvalid", err)
 	}
 }
 

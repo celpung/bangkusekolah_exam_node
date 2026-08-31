@@ -102,10 +102,13 @@ type Participant struct {
 }
 
 type Attempt struct {
-	ID              string
-	ParticipantID   string
-	StudentID       string
-	ExamID          string
+	ID            string
+	ParticipantID string
+	StudentID     string
+	ExamID        string
+	// DeviceID identifies the app installation that owns an in-progress
+	// attempt. It is intentionally absent from delivery DTOs.
+	DeviceID        string
 	AttemptNo       int
 	Status          AttemptStatus
 	StartedAt       time.Time

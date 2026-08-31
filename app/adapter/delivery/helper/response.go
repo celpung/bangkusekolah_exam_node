@@ -43,6 +43,8 @@ func HandleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, node_error.ErrForbidden),
 		errors.Is(err, node_error.ErrAttemptLocked):
 		Error(w, http.StatusForbidden, "forbidden")
+	case errors.Is(err, node_error.ErrAttemptDeviceMismatch):
+		Error(w, http.StatusConflict, "exam attempt belongs to another device")
 	case errors.Is(err, node_error.ErrInvalidAccessCode):
 		Error(w, http.StatusUnauthorized, "invalid access code")
 	case errors.Is(err, node_error.ErrTooManyAttempts),
@@ -55,6 +57,7 @@ func HandleError(w http.ResponseWriter, err error) {
 		errors.Is(err, node_error.ErrMaxAttemptsReached),
 		errors.Is(err, node_error.ErrAttemptNotFound),
 		errors.Is(err, node_error.ErrAttemptExpired),
+		errors.Is(err, node_error.ErrAttemptDeviceIDInvalid),
 		errors.Is(err, node_error.ErrStaleAnswerWrite),
 		errors.Is(err, node_error.ErrItemNotFound),
 		errors.Is(err, node_error.ErrParticipantNotFound),

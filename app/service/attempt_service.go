@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
@@ -26,6 +27,21 @@ func NewAttemptService(repo outbound_repository.NodeRepository, txManager outbou
 }
 
 func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
+	return s.startAttempt(ctx, participantID, examID, "")
+}
+
+func (s *AttemptService) StartAttemptWithDevice(ctx context.Context, participantID, examID, deviceID string) (*entity.Attempt, error) {
+	if strings.TrimSpace(deviceID) == "" {
+		return nil, node_error.ErrAttemptDeviceIDInvalid
+	}
+	return s.startAttempt(ctx, participantID, examID, deviceID)
+}
+
+func (s *AttemptService) startAttempt(ctx context.Context, participantID, examID, deviceID string) (*entity.Attempt, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if len(deviceID) > 128 {
+		return nil, node_error.ErrAttemptDeviceIDInvalid
+	}
 	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
 		return nil, err
@@ -43,6 +59,22 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID
 	}
 	active, err := s.repo.FindActiveAttemptByParticipantAndExam(ctx, participantID, examID)
 	if err == nil {
+		if active.DeviceID != "" && active.DeviceID != deviceID {
+			return nil, node_error.ErrAttemptDeviceMismatch
+		}
+		if active.DeviceID == "" && deviceID != "" {
+			if binder, ok := s.repo.(outbound_repository.AttemptDeviceBinder); ok {
+				if err := binder.BindAttemptDevice(ctx, active.ID, deviceID); err != nil {
+					return nil, err
+				}
+			} else {
+				active.DeviceID = deviceID
+				if err := s.repo.UpdateAttempt(ctx, active); err != nil {
+					return nil, err
+				}
+			}
+			active.DeviceID = deviceID
+		}
 		return active, nil
 	}
 	if !errors.Is(err, node_error.ErrAttemptNotFound) {
@@ -65,6 +97,22 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID
 			return node_error.ErrForbidden
 		}
 		if active, err := s.repo.FindActiveAttemptByParticipantAndExam(txCtx, participantID, examID); err == nil {
+			if active.DeviceID != "" && active.DeviceID != deviceID {
+				return node_error.ErrAttemptDeviceMismatch
+			}
+			if active.DeviceID == "" && deviceID != "" {
+				if binder, ok := s.repo.(outbound_repository.AttemptDeviceBinder); ok {
+					if err := binder.BindAttemptDevice(txCtx, active.ID, deviceID); err != nil {
+						return err
+					}
+				} else {
+					active.DeviceID = deviceID
+					if err := s.repo.UpdateAttempt(txCtx, active); err != nil {
+						return err
+					}
+				}
+				active.DeviceID = deviceID
+			}
 			result = active
 			return nil
 		} else if !errors.Is(err, node_error.ErrAttemptNotFound) {
@@ -76,7 +124,7 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID
 		attemptNo := locked.AttemptCount + 1
 		attempt := &entity.Attempt{
 			ParticipantID: participantID, StudentID: locked.StudentID,
-			ExamID: exam.ID, AttemptNo: attemptNo, Status: entity.AttemptInProgress,
+			ExamID: exam.ID, DeviceID: deviceID, AttemptNo: attemptNo, Status: entity.AttemptInProgress,
 			StartedAt: now, DueAt: due, MaxScore: exam.MaxScore, GradingStatus: entity.GradingPending,
 		}
 		attempt.ID = s.idGen.NewID()
@@ -233,4 +281,6 @@ func (s *AttemptService) GetResult(ctx context.Context, participantID, examID st
 	return attempt, nil
 }
 
-var _ inbound.AttemptUsecase = (*AttemptService)(nil)
+var (
+	_ inbound.AttemptUsecase = (*AttemptService)(nil)
+)

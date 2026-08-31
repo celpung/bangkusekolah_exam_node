@@ -50,6 +50,9 @@ type fakeAttemptUC struct {
 func (f *fakeAttemptUC) StartAttempt(_ context.Context, _, _ string) (*entity.Attempt, error) {
 	return nil, nil
 }
+func (f *fakeAttemptUC) StartAttemptWithDevice(_ context.Context, _, _, _ string) (*entity.Attempt, error) {
+	return nil, nil
+}
 func (f *fakeAttemptUC) GetAttemptState(_ context.Context, _, _ string) (*inbound.AttemptState, error) {
 	return f.state, f.err
 }

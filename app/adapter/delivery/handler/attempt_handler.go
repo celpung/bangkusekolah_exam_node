@@ -33,7 +33,13 @@ func (h *AttemptHandler) Start(w http.ResponseWriter, r *http.Request) {
 		delivery_helper.Error(w, http.StatusForbidden, "exam does not belong to your token")
 		return
 	}
-	attempt, err := h.attemptUC.StartAttempt(r.Context(), pid, examID)
+	var req dto.StartAttemptRequest
+	if r.ContentLength != 0 {
+		if !delivery_helper.DecodeJSON(w, r, &req) {
+			return
+		}
+	}
+	attempt, err := h.attemptUC.StartAttemptWithDevice(r.Context(), pid, examID, req.DeviceID)
 	if err != nil {
 		delivery_helper.HandleError(w, err)
 		return

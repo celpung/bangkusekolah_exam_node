@@ -13,6 +13,10 @@ type StudentExamResponse struct {
 	MaxAttempts     int       `json:"max_attempts"`
 }
 
+type StartAttemptRequest struct {
+	DeviceID string `json:"device_id"`
+}
+
 // AttemptResponse is the frozen attempt metadata for POST /api/v1/student/exams/{examId}/attempts.
 type AttemptResponse struct {
 	ID              string     `json:"id"`

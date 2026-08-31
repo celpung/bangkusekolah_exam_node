@@ -55,6 +55,10 @@ func (f *fakeStartAttemptUC) StartAttempt(ctx context.Context, participantID, ex
 	return f.startFn(ctx, participantID, examID)
 }
 
+func (f *fakeStartAttemptUC) StartAttemptWithDevice(ctx context.Context, participantID, examID, _ string) (*entity.Attempt, error) {
+	return f.startFn(ctx, participantID, examID)
+}
+
 func TestStartUsesJWTParticipantAndExamPath(t *testing.T) {
 	var gotParticipant string
 	uc := &fakeStartAttemptUC{startFn: func(_ context.Context, participantID, _ string) (*entity.Attempt, error) {
