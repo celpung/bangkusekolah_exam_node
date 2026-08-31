@@ -2,17 +2,34 @@
 
 ## D-3 Provision
 
+0. From a developer/CI checkout (not on the VPS), build the static operational tools:
+   ```bash
+   ./scripts/maintenance/build-tools.sh amd64   # or arm64
+   ```
+   Copy `dist/tools/*` to the VPS deployment directory as `bin/` and copy `scripts/maintenance/run-tool.sh`. The VPS needs Docker, not Go.
 1. Provision VPS from snapshot or `scripts/provision.sh` (never by hand).
-2. `docker compose up -d --wait` — wait for mysql healthy.
+2. `docker compose up -d --build --wait` — wait for mysql healthy.
 3. Register node in central: `POST /api/v1/exam-nodes` (admin) → save `token` once.
-4. Set `CENTRAL_NODE_TOKEN` and `DEPLOYMENT_ID` in `.env`.
+4. Set `CENTRAL_NODE_TOKEN` and `CENTRAL_BASE_URL` in `.env`.
 5. Verify NTP: `timedatectl status` or `ntpq -p` — offset < 2s, else `preflight` fails.
+
+## Operational tools
+
+The runtime image contains the `examnode` server. The three one-shot operational tools are built as static Linux binaries on a developer/CI machine and mounted into a throwaway Docker container on the VPS:
+
+```bash
+scripts/maintenance/run-tool.sh bundleload --pull
+scripts/maintenance/run-tool.sh preflight
+scripts/maintenance/run-tool.sh examharvest --force
+```
+
+`run-tool.sh` uses the `examnode` Compose service, so the tool reaches MySQL through the Compose network and receives the same Central configuration as the server. It accepts only `bundleload`, `preflight`, and `examharvest`; it never prints the `.env` values.
 
 ## D-1 Deploy
 
 1. SuperAdmin/Admin selects multiple exams and deploys them to a node in central: `POST /api/v1/exams/{id}/node-deployment` per exam (loop in `DeployExams`, Task 6) or a bulk `DeployExams` call. Mapping exam→VPS is displayed in the dashboard.
-2. On node: `go run ./cmd/bundleload --pull` pulls N bundles sequentially (one per deployment), verifies each checksum, and refreshes the running `examnode` cache when the process is already up. If `examnode` is stopped, the next startup rehydrates the same database snapshot.
-3. `go run ./cmd/preflight` — must print `PASS` per bundle. If any `FAIL`, fix and rerun. Do not proceed to D-0 with a `FAIL`.
+2. On node: `scripts/maintenance/run-tool.sh bundleload --pull` pulls N bundles sequentially (one per deployment), verifies each checksum, and refreshes the running `examnode` cache when the process is already up. If `examnode` is stopped, the next startup rehydrates the same database snapshot.
+3. `scripts/maintenance/run-tool.sh preflight` — must print `PASS` per bundle. If any `FAIL`, fix and rerun. Do not proceed to D-0 with a `FAIL`.
 4. Verify: `curl -sf http://127.0.0.1:8080/livez` → 200, `curl -sf http://127.0.0.1:8080/readyz` → 200.
 5. Access codes are paperless — handshake is automatic via `ListStudentExams` enrichment (Task 9). `GET /api/v1/exams/{id}/node-deployment/access-codes` remains for administrative/diagnostic use only.
 
@@ -41,9 +58,10 @@
 ## If harvest is failing
 
 ```bash
-go run ./cmd/examharvest --force
+scripts/maintenance/run-tool.sh examharvest --force
 # or
-curl -X POST http://127.0.0.1:8080/internal/v1/harvest/force -H "Authorization: Bearer $CENTRAL_NODE_TOKEN"
+curl -X POST http://127.0.0.1:8080/internal/v1/harvest/force \
+  -H "Authorization: Bearer $CENTRAL_NODE_TOKEN"
 ```
 
 Check central logs for `POST /api/v1/exam-nodes/deployments/{id}/attempts` — each attempt is acked individually, so one bad attempt does not cost the batch. Retrying is safe (upsert by primary key, decision 5).

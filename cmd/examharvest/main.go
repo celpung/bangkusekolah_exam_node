@@ -2,7 +2,7 @@
 // expired attempts), then push all finished unpushed attempts to central.
 // One-shot, follows the cmd/examrepair precedent. Runbook usage:
 //
-//	go run ./cmd/examharvest --force
+//	scripts/maintenance/run-tool.sh examharvest --force
 package main
 
 import (
