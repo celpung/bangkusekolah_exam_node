@@ -14,7 +14,7 @@ type AttemptState struct {
 }
 
 type AttemptUsecase interface {
-	StartAttempt(ctx context.Context, participantID string) (*entity.Attempt, error)
+	StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error)
 	GetAttemptState(ctx context.Context, participantID, attemptID string) (*AttemptState, error)
 	// AutosaveAnswer writes one answer. clientSeq is monotonic per (attempt, item)
 	// on the client; the server drops any write whose seq is not greater than the

@@ -20,7 +20,7 @@ func testConfig() *config.Config {
 func TestJWTIssuerIssueAndParseRoundTrip(t *testing.T) {
 	issuer := NewJWTIssuer(testConfig())
 	ctx := context.Background()
-	token, err := issuer.Issue(ctx, "part-1", "stu-1", "exam-1")
+	token, err := issuer.Issue(ctx, "part-1", "stu-1", "exam-1", "dep-1")
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestJWTIssuerIssueAndParseRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if claims.ParticipantID != "part-1" || claims.StudentID != "stu-1" || claims.ExamID != "exam-1" {
+	if claims.ParticipantID != "part-1" || claims.StudentID != "stu-1" || claims.ExamID != "exam-1" || claims.DeploymentID != "dep-1" {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if claims.ExpiresAt <= time.Now().Unix() {
@@ -42,7 +42,7 @@ func TestJWTIssuerIssueAndParseRoundTrip(t *testing.T) {
 func TestJWTIssuerRejectsTamperedToken(t *testing.T) {
 	issuer := NewJWTIssuer(testConfig())
 	ctx := context.Background()
-	token, _ := issuer.Issue(ctx, "part-1", "stu-1", "exam-1")
+	token, _ := issuer.Issue(ctx, "part-1", "stu-1", "exam-1", "dep-1")
 	tampered := token[:len(token)-2] + "xx"
 	if _, err := issuer.Parse(ctx, tampered); err == nil {
 		t.Fatal("tampered token must fail parse")
@@ -53,7 +53,7 @@ func TestJWTIssuerRejectsForeignSecret(t *testing.T) {
 	ctx := context.Background()
 	a := NewJWTIssuer(&config.Config{JWTSecret: "secret-A-32-characters-long-xxxx", JWTTTL: time.Hour})
 	b := NewJWTIssuer(&config.Config{JWTSecret: "secret-B-32-characters-long-yyyy", JWTTTL: time.Hour})
-	token, _ := a.Issue(ctx, "part-1", "stu-1", "exam-1")
+	token, _ := a.Issue(ctx, "part-1", "stu-1", "exam-1", "dep-1")
 	if _, err := b.Parse(ctx, token); err == nil {
 		t.Fatal("token signed with a different secret must not verify")
 	}
@@ -61,7 +61,7 @@ func TestJWTIssuerRejectsForeignSecret(t *testing.T) {
 
 func TestJWTIssuerExpiredTokenFails(t *testing.T) {
 	issuer := NewJWTIssuer(&config.Config{JWTSecret: testConfig().JWTSecret, JWTTTL: -time.Minute})
-	token, err := issuer.Issue(context.Background(), "part-1", "stu-1", "exam-1")
+	token, err := issuer.Issue(context.Background(), "part-1", "stu-1", "exam-1", "dep-1")
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestJWTIssuerExpiredTokenFails(t *testing.T) {
 // against variants we never issue.
 func signWith(method jwt.SigningMethod, secret string) string {
 	claims := jwt.MapClaims{
-		"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1",
+		"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1",
 		"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
 	}
 	tok := jwt.NewWithClaims(method, claims)
@@ -96,11 +96,12 @@ func TestJWTIssuerRejectsMissingIdentityClaims(t *testing.T) {
 	issuer := NewJWTIssuer(testConfig())
 	now := time.Now().Unix()
 	cases := map[string]jwt.MapClaims{
-		"missing sid":     {"pid": "part-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
-		"missing exam_id": {"pid": "part-1", "sid": "stu-1", "iat": now, "exp": now + 3600},
-		"missing exp":     {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "iat": now},
-		"missing iat":     {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "exp": now + 3600},
-		"zero exp":        {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "iat": now, "exp": 0},
+		"missing sid":           {"pid": "part-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
+		"missing exam_id":       {"pid": "part-1", "sid": "stu-1", "iat": now, "exp": now + 3600},
+		"missing deployment_id": {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "iat": now, "exp": now + 3600},
+		"missing exp":           {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now},
+		"missing iat":           {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "exp": now + 3600},
+		"zero exp":              {"pid": "part-1", "sid": "stu-1", "exam_id": "exam-1", "deployment_id": "dep-1", "iat": now, "exp": 0},
 	}
 	for name, claims := range cases {
 		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

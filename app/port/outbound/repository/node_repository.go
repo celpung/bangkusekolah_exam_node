@@ -7,11 +7,17 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 )
 
+type DeploymentFenceRepository interface {
+	MarkDeploymentFenced(ctx context.Context, deploymentID string, at time.Time) error
+	IsDeploymentFenced(ctx context.Context, examID string, deploymentID string) (bool, error)
+}
+
 type NodeRepository interface {
-	FindExam(ctx context.Context) (*entity.Exam, error)
+	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
 	FindParticipantByID(ctx context.Context, participantID string) (*entity.Participant, error)
 	FindParticipantByIDForUpdate(ctx context.Context, participantID string) (*entity.Participant, error)
 	FindActiveAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error)
+	FindActiveAttemptByParticipantAndExam(ctx context.Context, participantID, examID string) (*entity.Attempt, error)
 	FindAttemptByID(ctx context.Context, attemptID string) (*entity.Attempt, error)
 	ListAnswersByAttempt(ctx context.Context, attemptID string) ([]entity.Answer, error)
 	CreateAttempt(ctx context.Context, attempt *entity.Attempt) error
@@ -27,7 +33,6 @@ type NodeRepository interface {
 	FindAttemptByIDForUpdate(ctx context.Context, attemptID string) (*entity.Attempt, error)
 	FindParticipantByAccessCode(ctx context.Context, code string) (*entity.Participant, error)
 	ListItemsByExam(ctx context.Context) ([]entity.Item, error)
-	FindExamByID(ctx context.Context, examID string) (*entity.Exam, error)
 	ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error)
 	ListExams(ctx context.Context) ([]entity.Exam, error)
 	FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error)

@@ -19,6 +19,7 @@ import (
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
+	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
 )
 
@@ -41,17 +42,21 @@ func main() {
 	}
 
 	repo := repository.NewNodeRepository(db)
+	fenceRepo, _ := repo.(outbound_repository.DeploymentFenceRepository)
 	txManager := helper.NewTxManager(db)
 	idGen := &uuidGenerator{}
 	issuer := node_security.NewJWTIssuer(cfg)
 	contentSvc := service.NewContentService(repo)
-	authSvc := service.NewAuthService(repo, issuer)
 	attemptSvc := service.NewAttemptService(repo, txManager, idGen)
 	integritySvc := service.NewIntegrityService(repo, txManager, idGen)
 	bundleSvc := service.NewBundleService(repo, txManager, contentSvc)
 	harvestClient := nodecentral.NewHarvestClient(cfg)
+	fenceClient := nodecentral.NewFenceClient(cfg.CentralBaseURL, cfg.CentralNodeToken)
 	harvestSvc := service.NewHarvestService(repo, harvestClient)
 	sweeperSvc := service.NewSweeperService(repo, txManager)
+	harvestSvc.SetSweeper(sweeperSvc)
+	authSvc := service.NewAuthServiceWithLimits(repo, issuer, cfg.JWTTTL, cfg.LoginRateLimit, cfg.LoginRateWindow)
+	studentExamSvc := service.NewStudentExamService(repo)
 
 	// Rehydrate the in-memory content cache from the persisted bundles
 	// BEFORE accepting traffic — a restart must not break the sitting flow.
@@ -67,7 +72,7 @@ func main() {
 	// Compress middleware would re-wrap it, so it stays off.
 	r.Use(chimiddleware.Throttle(cfg.MaxInflightRequests))
 
-	internalH := handler.NewInternalHandler(bundleSvc)
+	internalH := handler.NewInternalHandler(bundleSvc, contentSvc)
 	harvestH := handler.NewHarvestHandler(harvestSvc)
 	readiness := node_router.NewReadinessRouter(contentSvc,
 		func() ([]string, error) {
@@ -82,12 +87,27 @@ func main() {
 			return ids, nil
 		},
 		sqlDB.Ping)
-	r.Mount("/", node_router.NewRouter(issuer, cfg.CentralNodeToken, authSvc, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
+	r.Mount("/", node_router.NewRouter(
+		issuer,
+		cfg.CentralNodeToken,
+		authSvc,
+		studentExamSvc,
+		contentSvc,
+		attemptSvc,
+		integritySvc,
+		internalH,
+		harvestH,
+		readiness,
+		fenceRepo,
+	))
 
 	// Background workers: sweeper drains expired attempts each tick; harvest
 	// pushes finished work to central every cfg.HarvestInterval (default 5m).
 	go sweeperSvc.Start(context.Background(), cfg.SweepInterval)
 	go harvestSvc.Start(context.Background(), cfg.HarvestInterval)
+	if fenceRepo, ok := repo.(outbound_repository.DeploymentFenceRepository); ok {
+		go startFenceReconciler(context.Background(), fenceRepo, fenceClient, cfg.HeartbeatInterval)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,
@@ -97,6 +117,44 @@ func main() {
 	log.Printf("examnode listening on %s", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+func startFenceReconciler(ctx context.Context, repo outbound_repository.DeploymentFenceRepository, client *nodecentral.FenceClient, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	reconcile := func() {
+		fences, err := client.ListPendingFences(ctx)
+		if err != nil {
+			log.Printf("fence discovery failed: %v", err)
+			return
+		}
+		for _, fence := range fences {
+			// Failure injection is compiled in only with the `e2e` build tag;
+			// the production build's implementation always returns false.
+			if shouldSkipLocalFence(fence.ID) {
+				continue
+			}
+			if err := repo.MarkDeploymentFenced(ctx, fence.ID, time.Now().UTC()); err != nil {
+				log.Printf("local fence failed for deployment %s: %v", fence.ID, err)
+				continue
+			}
+			if err := client.AcknowledgeFence(ctx, fence.ID); err != nil {
+				log.Printf("fence acknowledgement failed for deployment %s: %v", fence.ID, err)
+			}
+		}
+	}
+	reconcile()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
 	}
 }
 

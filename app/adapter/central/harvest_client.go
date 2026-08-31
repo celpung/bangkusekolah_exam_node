@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -61,8 +62,39 @@ func (c *HarvestClient) Push(ctx context.Context, deploymentID string, batch inb
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("harvest push: status %d", resp.StatusCode)
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read ack: %w", err)
+	}
+	var envelope struct {
+		Success *bool           `json:"success"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode ack: %w", err)
+	}
+	if envelope.Success != nil || envelope.Data != nil {
+		if envelope.Success != nil && !*envelope.Success {
+			if envelope.Message == "" {
+				return nil, fmt.Errorf("central rejected harvest")
+			}
+			return nil, fmt.Errorf("central rejected harvest: %s", envelope.Message)
+		}
+		if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+			return nil, fmt.Errorf("central harvest acknowledgement has no data")
+		}
+		var result inbound.ExamNodeIngestResult
+		if err := json.Unmarshal(envelope.Data, &result); err != nil {
+			return nil, fmt.Errorf("decode envelope ack data: %w", err)
+		}
+		return &result, nil
+	}
+
+	// Keep compatibility with older test/proxy responses that returned the ack
+	// object without the central response envelope.
 	var result inbound.ExamNodeIngestResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decode ack: %w", err)
 	}
 	return &result, nil

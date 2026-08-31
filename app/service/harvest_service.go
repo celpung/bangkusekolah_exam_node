@@ -24,9 +24,14 @@ type HarvestPusher interface {
 	Push(ctx context.Context, deploymentID string, batch inbound.ExamNodeAttemptBatch) (*inbound.ExamNodeIngestResult, error)
 }
 
+type ExpiredAttemptSweeper interface {
+	SweepExpiredAttempts(ctx context.Context) (int, error)
+}
+
 type HarvestService struct {
-	repo   outbound_repository.NodeRepository
-	client HarvestPusher
+	repo    outbound_repository.NodeRepository
+	client  HarvestPusher
+	sweeper ExpiredAttemptSweeper
 
 	// drainMu serializes drains process-wide: the ticker and the internal
 	// force route must not push duplicate batches concurrently.
@@ -37,21 +42,38 @@ func NewHarvestService(repo outbound_repository.NodeRepository, client HarvestPu
 	return &HarvestService{repo: repo, client: client}
 }
 
+func (s *HarvestService) SetSweeper(sweeper ExpiredAttemptSweeper) {
+	s.sweeper = sweeper
+}
+
 // DrainOnce collects finished unharvested attempts, groups them by their
 // exam's deployment, pushes one batch per deployment, and marks acked
 // attempts. Idempotent: a second drain with no new attempts sends nothing.
 func (s *HarvestService) DrainOnce(ctx context.Context) (int, error) {
-	s.drainMu.Lock()
-	defer s.drainMu.Unlock()
-	return s.drainLocked(ctx)
+	return s.drain(ctx, false)
 }
 
-func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
+func (s *HarvestService) DrainFinal(ctx context.Context) (int, error) {
+	return s.drain(ctx, true)
+}
+
+func (s *HarvestService) drain(ctx context.Context, final bool) (int, error) {
+	s.drainMu.Lock()
+	defer s.drainMu.Unlock()
+	if s.sweeper != nil {
+		if _, err := s.sweeper.SweepExpiredAttempts(ctx); err != nil {
+			return 0, fmt.Errorf("sweep before harvest: %w", err)
+		}
+	}
+	return s.drainLocked(ctx, final)
+}
+
+func (s *HarvestService) drainLocked(ctx context.Context, final bool) (int, error) {
 	attempts, err := s.repo.ListUnpushedAttempts(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if len(attempts) == 0 {
+	if len(attempts) == 0 && !final {
 		return 0, nil
 	}
 
@@ -61,6 +83,20 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 	// unharvested — it must never block valid deployments from draining.
 	var resolveFailures []string
 	byDeployment := map[string][]entity.Attempt{}
+	if final {
+		exams, err := s.repo.ListExams(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("list exams for final harvest: %w", err)
+		}
+		for _, exam := range exams {
+			if strings.TrimSpace(exam.DeploymentID) == "" {
+				return 0, fmt.Errorf("exam %s has no deployment ID for final harvest", exam.ID)
+			}
+			if _, exists := byDeployment[exam.DeploymentID]; !exists {
+				byDeployment[exam.DeploymentID] = nil
+			}
+		}
+	}
 	examCache := map[string]*entity.Exam{}
 	for _, att := range attempts {
 		exam, cached := examCache[att.ExamID]
@@ -99,8 +135,15 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 	// Deterministic order for stable runbook output.
 	for _, depID := range sortedKeys(byDeployment) {
 		group := byDeployment[depID]
+		if final && len(group) == 0 {
+			if _, err := s.drainDeployment(ctx, depID, nil, true); err != nil {
+				drainErrors = append(drainErrors, fmt.Sprintf("dep %s: %s", depID, err.Error()))
+			}
+			continue
+		}
 		for len(group) > 0 {
-			n, perr := s.drainDeployment(ctx, depID, group)
+			markFinal := final && len(group) <= maxBatchAttempts
+			n, perr := s.drainDeployment(ctx, depID, group, markFinal)
 			if perr != nil {
 				slog.ErrorContext(ctx, "harvest: deployment drain failed, continuing",
 					"deployment", depID, "error", perr)
@@ -128,12 +171,12 @@ func (s *HarvestService) drainLocked(ctx context.Context) (int, error) {
 
 // drainDeployment pushes up to maxBatchAttempts attempts of one deployment
 // and returns how many were accepted.
-func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID string, attempts []entity.Attempt) (int, error) {
+func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID string, attempts []entity.Attempt, final bool) (int, error) {
 	if len(attempts) > maxBatchAttempts {
 		attempts = attempts[:maxBatchAttempts]
 	}
 
-	batch := inbound.ExamNodeAttemptBatch{Attempts: make([]inbound.ExamNodeAttemptPayload, 0, len(attempts))}
+	batch := inbound.ExamNodeAttemptBatch{Attempts: make([]inbound.ExamNodeAttemptPayload, 0, len(attempts)), Final: final}
 	sent := make(map[string]struct{}, len(attempts))
 	for _, att := range attempts {
 		answers, err := s.repo.ListAnswersByAttempt(ctx, att.ID)
@@ -170,7 +213,11 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 	result, err := s.client.Push(ctx, deploymentID, batch)
 	if err != nil {
 		slog.ErrorContext(ctx, "harvest push failed", "deployment", deploymentID, "error", err, "batch_size", len(batch.Attempts))
-		if logErr := s.repo.LogHarvestFailure(ctx, batch.Attempts[0].ID, deploymentID, len(batch.Attempts), err.Error()); logErr != nil {
+		attemptID := ""
+		if len(batch.Attempts) > 0 {
+			attemptID = batch.Attempts[0].ID
+		}
+		if logErr := s.repo.LogHarvestFailure(ctx, attemptID, deploymentID, len(batch.Attempts), err.Error()); logErr != nil {
 			slog.ErrorContext(ctx, "harvest_log write failed", "error", logErr)
 		}
 		return 0, err
@@ -179,7 +226,11 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 		// HIGH-2: a nil result with nil error is a broken pusher — never
 		// dereference it.
 		err := fmt.Errorf("harvest push: nil acknowledgement from central")
-		if logErr := s.repo.LogHarvestFailure(ctx, batch.Attempts[0].ID, deploymentID, len(batch.Attempts), err.Error()); logErr != nil {
+		attemptID := ""
+		if len(batch.Attempts) > 0 {
+			attemptID = batch.Attempts[0].ID
+		}
+		if logErr := s.repo.LogHarvestFailure(ctx, attemptID, deploymentID, len(batch.Attempts), err.Error()); logErr != nil {
 			slog.ErrorContext(ctx, "harvest_log write failed", "error", logErr)
 		}
 		return 0, err
@@ -234,6 +285,9 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 		}
 	}
 
+	if final && len(result.Failures) > 0 {
+		return len(accepted), fmt.Errorf("central rejected %d attempt(s) in final harvest", len(result.Failures))
+	}
 	return len(accepted), nil
 }
 

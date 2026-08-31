@@ -66,6 +66,20 @@ func TestGradingGoldenVectors(t *testing.T) {
 	}
 }
 
+func TestGradeObjectiveAnswerEmptyAnswerNeverMatchesEmptyKey(t *testing.T) {
+	item := entity.Item{
+		QuestionType:          entity.QuestionMatching,
+		Points:                15,
+		AnswerKeySnapshotJSON: map[string]interface{}{"pairs": map[string]interface{}{}},
+	}
+	answer := entity.Answer{AnswerJSON: map[string]interface{}{}}
+
+	score, graded := GradeObjectiveAnswer(item, &answer)
+	if score != 0 || !graded {
+		t.Fatalf("empty objective answer = (%v, %v), want (0, true)", score, graded)
+	}
+}
+
 func TestGradingGoldenVectorsCoversEveryQuestionType(t *testing.T) {
 	raw, err := os.ReadFile(vectorFile)
 	if err != nil {

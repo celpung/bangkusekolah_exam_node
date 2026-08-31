@@ -25,18 +25,6 @@ func NewNodeRepository(db *gorm.DB) outbound_repository.NodeRepository {
 	return &nodeRepository{db: db}
 }
 
-func (r *nodeRepository) FindExam(ctx context.Context) (*entity.Exam, error) {
-	db := helper.GetDB(ctx, r.db)
-	var m model.Exam
-	if err := db.First(&m).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, node_error.ErrExamNotLoaded
-		}
-		return nil, err
-	}
-	return mapper.ToExamEntity(&m), nil
-}
-
 func (r *nodeRepository) FindParticipantByID(ctx context.Context, id string) (*entity.Participant, error) {
 	db := helper.GetDB(ctx, r.db)
 	var m model.Participant
@@ -69,6 +57,19 @@ func (r *nodeRepository) FindActiveAttemptByParticipant(ctx context.Context, pid
 			return nil, node_error.ErrAttemptNotFound
 		}
 		return nil, err
+	}
+	return mapper.ToAttemptEntity(&m), nil
+}
+
+func (r *nodeRepository) FindActiveAttemptByParticipantAndExam(ctx context.Context, pid, examID string) (*entity.Attempt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Attempt
+	// idx_attempts_exam (exam_id, participant_id, attempt_no) scopes lookup to one exam
+	if err := db.Where("participant_id = ? AND exam_id = ? AND status = ?", pid, examID, string(entity.AttemptInProgress)).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrAttemptNotFound
+		}
+		return nil, fmt.Errorf("find active attempt by participant and exam: %w", err)
 	}
 	return mapper.ToAttemptEntity(&m), nil
 }
@@ -436,6 +437,27 @@ func (r *nodeRepository) ListExams(ctx context.Context) ([]entity.Exam, error) {
 		entities[i] = *mapper.ToExamEntity(&models[i])
 	}
 	return entities, nil
+}
+
+func (r *nodeRepository) MarkDeploymentFenced(ctx context.Context, deploymentID string, at time.Time) error {
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.Exam{}).Where("deployment_id = ?", deploymentID).Update("fenced_at", at)
+	if result.Error != nil {
+		return fmt.Errorf("mark deployment fenced: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return node_error.ErrExamNotLoaded
+	}
+	return nil
+}
+
+func (r *nodeRepository) IsDeploymentFenced(ctx context.Context, examID string, deploymentID string) (bool, error) {
+	db := helper.GetDB(ctx, r.db)
+	var count int64
+	if err := db.Model(&model.Exam{}).Where("id = ? AND deployment_id = ? AND fenced_at IS NOT NULL", examID, deploymentID).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check deployment fence: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (r *nodeRepository) FindLatestAttemptByParticipant(ctx context.Context, participantID string) (*entity.Attempt, error) {

@@ -43,6 +43,7 @@ type ExamNodeAttemptPayload struct {
 
 type ExamNodeAttemptBatch struct {
 	Attempts []ExamNodeAttemptPayload `json:"attempts"`
+	Final    bool                     `json:"final"`
 }
 
 // ExamNodeIngestResult acknowledges each attempt individually so the node

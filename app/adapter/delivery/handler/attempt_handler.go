@@ -33,12 +33,18 @@ func (h *AttemptHandler) Start(w http.ResponseWriter, r *http.Request) {
 		delivery_helper.Error(w, http.StatusForbidden, "exam does not belong to your token")
 		return
 	}
-	attempt, err := h.attemptUC.StartAttempt(r.Context(), pid)
+	attempt, err := h.attemptUC.StartAttempt(r.Context(), pid, examID)
 	if err != nil {
 		delivery_helper.HandleError(w, err)
 		return
 	}
-	delivery_helper.Success(w, http.StatusOK, "attempt started", attempt)
+	resp := dto.AttemptResponse{
+		ID: attempt.ID, ExamID: attempt.ExamID, AttemptNo: attempt.AttemptNo,
+		Status: string(attempt.Status), StartedAt: attempt.StartedAt, DueAt: attempt.DueAt,
+		SubmittedAt: attempt.SubmittedAt, AutoSubmittedAt: attempt.AutoSubmittedAt,
+		Score: attempt.Score, MaxScore: attempt.MaxScore, GradingStatus: string(attempt.GradingStatus),
+	}
+	delivery_helper.Success(w, http.StatusOK, "attempt started", resp)
 }
 
 // GetState returns the caller's attempt with answers and server_time. The
@@ -52,7 +58,7 @@ func (h *AttemptHandler) GetState(w http.ResponseWriter, r *http.Request) {
 		delivery_helper.HandleError(w, err)
 		return
 	}
-	delivery_helper.Success(w, http.StatusOK, "attempt retrieved", state)
+	delivery_helper.Success(w, http.StatusOK, "attempt retrieved", dto.NewAttemptStateResponse(state))
 }
 
 // Autosave writes one answer. A stale client_seq is a 200 no-op — the client

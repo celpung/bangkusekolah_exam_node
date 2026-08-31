@@ -95,6 +95,23 @@ func TestAutosaveDropsStaleClientSeq(t *testing.T) {
 	}
 }
 
+func TestAutosaveRejectsItemFromDifferentExam(t *testing.T) {
+	svc, repo := autosaveFixture()
+	repo.items["item-other"] = &entity.Item{
+		ID: "item-other", ExamID: "exam-other", QuestionType: entity.QuestionSingleChoice,
+		Points: 10, AnswerKeySnapshotJSON: map[string]interface{}{"answer": "A"},
+	}
+	_, err := svc.AutosaveAnswer(
+		context.Background(), "att-1", "item-other", map[string]interface{}{"answer": "A"}, nil, 1, "part-1",
+	)
+	if !errors.Is(err, node_error.ErrForbidden) {
+		t.Fatalf("cross-exam item must be forbidden, got %v", err)
+	}
+	if len(repo.answers) != 0 {
+		t.Fatal("cross-exam item must not be persisted")
+	}
+}
+
 func TestAutosaveRejectsLockedAttempt(t *testing.T) {
 	svc, repo := autosaveFixture()
 	repo.attempts["att-1"].Status = entity.AttemptSubmitted

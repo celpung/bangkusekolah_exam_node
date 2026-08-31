@@ -48,16 +48,16 @@ func TestLoginReturnsTokenInResponseEnvelope(t *testing.T) {
 
 type fakeStartAttemptUC struct {
 	inbound.AttemptUsecase
-	startFn func(context.Context, string) (*entity.Attempt, error)
+	startFn func(context.Context, string, string) (*entity.Attempt, error)
 }
 
-func (f *fakeStartAttemptUC) StartAttempt(ctx context.Context, participantID string) (*entity.Attempt, error) {
-	return f.startFn(ctx, participantID)
+func (f *fakeStartAttemptUC) StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
+	return f.startFn(ctx, participantID, examID)
 }
 
 func TestStartUsesJWTParticipantAndExamPath(t *testing.T) {
 	var gotParticipant string
-	uc := &fakeStartAttemptUC{startFn: func(_ context.Context, participantID string) (*entity.Attempt, error) {
+	uc := &fakeStartAttemptUC{startFn: func(_ context.Context, participantID, _ string) (*entity.Attempt, error) {
 		gotParticipant = participantID
 		return &entity.Attempt{ID: "att-1", ParticipantID: participantID, ExamID: "exam-1"}, nil
 	}}
@@ -75,13 +75,13 @@ func TestStartUsesJWTParticipantAndExamPath(t *testing.T) {
 	if gotParticipant != "part-1" {
 		t.Fatalf("start participant = %q, want part-1", gotParticipant)
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"ID":"att-1"`)) {
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"id":"att-1"`)) {
 		t.Fatalf("start response missing attempt: %s", rec.Body.String())
 	}
 }
 
 func TestStartRejectsExamPathDifferentFromJWT(t *testing.T) {
-	uc := &fakeStartAttemptUC{startFn: func(_ context.Context, _ string) (*entity.Attempt, error) {
+	uc := &fakeStartAttemptUC{startFn: func(_ context.Context, _, _ string) (*entity.Attempt, error) {
 		t.Fatal("StartAttempt must not be called for a foreign exam path")
 		return nil, nil
 	}}

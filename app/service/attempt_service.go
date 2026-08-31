@@ -25,8 +25,8 @@ func NewAttemptService(repo outbound_repository.NodeRepository, txManager outbou
 	return &AttemptService{repo: repo, txManager: txManager, idGen: idGen}
 }
 
-func (s *AttemptService) StartAttempt(ctx context.Context, participantID string) (*entity.Attempt, error) {
-	exam, err := s.repo.FindExam(ctx)
+func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
+	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,10 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID string)
 	if err != nil {
 		return nil, err
 	}
-	active, err := s.repo.FindActiveAttemptByParticipant(ctx, participantID)
+	if participant.ExamID != examID {
+		return nil, node_error.ErrForbidden
+	}
+	active, err := s.repo.FindActiveAttemptByParticipantAndExam(ctx, participantID, examID)
 	if err == nil {
 		return active, nil
 	}
@@ -58,7 +61,10 @@ func (s *AttemptService) StartAttempt(ctx context.Context, participantID string)
 		if err != nil {
 			return err
 		}
-		if active, err := s.repo.FindActiveAttemptByParticipant(txCtx, participantID); err == nil {
+		if locked.ExamID != examID {
+			return node_error.ErrForbidden
+		}
+		if active, err := s.repo.FindActiveAttemptByParticipantAndExam(txCtx, participantID, examID); err == nil {
 			result = active
 			return nil
 		} else if !errors.Is(err, node_error.ErrAttemptNotFound) {
@@ -124,8 +130,9 @@ func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID s
 	if err != nil {
 		return nil, err
 	}
-	// Grade inline — cheap, and makes submit fast. Essay and other manual types
-	// return (0, false) and are stored as manual_required.
+	if item.ExamID != "" && item.ExamID != attempt.ExamID {
+		return nil, node_error.ErrForbidden
+	}
 	score, graded := grading.GradeObjectiveAnswer(*item, &entity.Answer{AnswerJSON: answerJSON})
 	var scorePtr *float64
 	gradingStatus := entity.GradingPending
@@ -153,30 +160,26 @@ func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participa
 		return nil, node_error.ErrForbidden
 	}
 	if attempt.Status == entity.AttemptSubmitted || attempt.Status == entity.AttemptAutoSubmitted || attempt.Status == entity.AttemptGraded {
-		return attempt, nil // idempotent
+		return attempt, nil
 	}
 	if attempt.Status != entity.AttemptInProgress {
 		return nil, node_error.ErrAttemptLocked
 	}
 	if time.Now().After(attempt.DueAt) {
-		// Let the sweeper own expiry; a direct submit past due is rejected so
-		// the client retries via the sweeper path and gets auto_submitted.
 		return nil, node_error.ErrAttemptExpired
 	}
-	exam, err := s.repo.FindExam(ctx)
+	exam, err := s.repo.FindExamByID(ctx, attempt.ExamID)
 	if err != nil {
 		return nil, err
 	}
 	var result *entity.Attempt
 	err = s.txManager.Atomic(ctx, func(txCtx context.Context) error {
-		// Lock the row and re-check status so a concurrent sweeper finalize
-		// cannot be overwritten and vice versa.
 		locked, err := s.repo.FindAttemptByIDForUpdate(txCtx, attemptID)
 		if err != nil {
 			return err
 		}
 		if locked.Status != entity.AttemptInProgress {
-			result = locked // lost race: already finalized, idempotent result
+			result = locked
 			return nil
 		}
 		answers, err := s.repo.ListAnswersByAttempt(txCtx, attemptID)
@@ -201,10 +204,6 @@ func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participa
 	return result, nil
 }
 
-// finalizeStatus totals the per-answer scores written by autosave. The
-// attempt is manual_required when either signal says so: a persisted manual
-// answer row, or the exam-level HasManualItems invariant (student may never
-// have saved an answer for the manual item).
 func finalizeStatus(answers []entity.Answer, hasManualItems bool) (float64, entity.GradingStatus) {
 	total := 0.0
 	hasManual := hasManualItems
@@ -233,3 +232,5 @@ func (s *AttemptService) GetResult(ctx context.Context, participantID, examID st
 	}
 	return attempt, nil
 }
+
+var _ inbound.AttemptUsecase = (*AttemptService)(nil)

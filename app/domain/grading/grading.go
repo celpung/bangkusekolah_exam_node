@@ -10,6 +10,20 @@ import (
 )
 
 func GradeObjectiveAnswer(item entity.Item, answer *entity.Answer) (float64, bool) {
+	if answer == nil || len(answer.AnswerJSON) == 0 {
+		switch item.QuestionType {
+		case entity.QuestionSingleChoice,
+			entity.QuestionTrueFalse,
+			entity.QuestionShortAnswer,
+			entity.QuestionMultipleChoice,
+			entity.QuestionOrdering,
+			entity.QuestionMatching:
+			return 0, true
+		default:
+			return 0, false
+		}
+	}
+
 	switch item.QuestionType {
 	case entity.QuestionSingleChoice, entity.QuestionTrueFalse:
 		if normalizedScalar(item.AnswerKeySnapshotJSON["answer"]) == normalizedScalar(answer.AnswerJSON["answer"]) {

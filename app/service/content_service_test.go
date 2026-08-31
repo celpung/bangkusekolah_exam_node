@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -24,6 +25,14 @@ func (f *fakeContentRepo) FindExamByID(_ context.Context, id string) (*entity.Ex
 }
 func (f *fakeContentRepo) ListItemsByExamID(_ context.Context, _ string) ([]entity.Item, error) {
 	return f.items, nil
+}
+
+func (f *fakeContentRepo) ListExams(_ context.Context) ([]entity.Exam, error) {
+	exams := make([]entity.Exam, 0, len(f.exams))
+	for _, exam := range f.exams {
+		exams = append(exams, *exam)
+	}
+	return exams, nil
 }
 
 func contentFixture() (*ContentService, *fakeContentRepo) {
@@ -100,6 +109,65 @@ func TestContentUnknownExamIsNotLoaded(t *testing.T) {
 	}
 	if _, _, _, _, err := svc.GetExamContent(context.Background(), "exam-unknown"); !errors.Is(err, node_error.ErrExamNotLoaded) {
 		t.Fatalf("unknown exam must be ErrExamNotLoaded, got %v", err)
+	}
+}
+
+func TestContentRawBytesFollowStudentContentContract(t *testing.T) {
+	svc, _ := contentFixture()
+	if err := svc.RebuildExam(context.Background(), "exam-a"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	_, _, _, raw, err := svc.GetExamContent(context.Background(), "exam-a")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatalf("student content must be a JSON array: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("student content item count = %d, want 2", len(items))
+	}
+	if _, ok := items[0]["answer_key_snapshot_json"]; ok {
+		t.Fatal("student content must not expose answer keys")
+	}
+	if _, ok := items[0]["rubric_criteria"]; ok {
+		t.Fatal("student content must not expose rubric criteria")
+	}
+}
+
+func TestContentReloadAllCachesRefreshesAndRemovesStaleEntries(t *testing.T) {
+	svc, repo := contentFixture()
+	ctx := context.Background()
+	if err := svc.RebuildExam(ctx, "exam-a"); err != nil {
+		t.Fatalf("rebuild a: %v", err)
+	}
+	if err := svc.RebuildExam(ctx, "exam-b"); err != nil {
+		t.Fatalf("rebuild b: %v", err)
+	}
+	_, _, _, before, err := svc.GetExamContent(ctx, "exam-a")
+	if err != nil {
+		t.Fatalf("get before: %v", err)
+	}
+
+	repo.items[0].PromptSnapshot = "updated after deploy"
+	delete(repo.exams, "exam-b")
+	if err := svc.ReloadAllCaches(ctx); err != nil {
+		t.Fatalf("reload all caches: %v", err)
+	}
+
+	_, _, _, after, err := svc.GetExamContent(ctx, "exam-a")
+	if err != nil {
+		t.Fatalf("get after: %v", err)
+	}
+	if string(after) == string(before) {
+		t.Fatal("reload must publish the database's updated content")
+	}
+	if _, _, _, _, err := svc.GetExamContent(ctx, "exam-b"); !errors.Is(err, node_error.ErrExamNotLoaded) {
+		t.Fatalf("stale deleted exam must be unavailable, got %v", err)
+	}
+	if ready := svc.CacheReadyExams(); len(ready) != 1 || ready[0] != "exam-a" {
+		t.Fatalf("ready cache entries = %v, want [exam-a]", ready)
 	}
 }
 

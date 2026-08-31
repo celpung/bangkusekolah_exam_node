@@ -63,6 +63,7 @@ type Exam struct {
 	AccessCodePrefix      string
 	BundleChecksum        string
 	ContentHash           string
+	FencedAt              *time.Time
 	LoadedAt              time.Time
 }
 
@@ -92,6 +93,7 @@ type Item struct {
 type Participant struct {
 	ID              string
 	ExamID          string
+	DeploymentID    string
 	StudentID       string
 	StudentName     string
 	AccessCode      string

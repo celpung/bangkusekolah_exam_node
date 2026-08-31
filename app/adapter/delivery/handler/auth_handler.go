@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"errors"
+	"net"
 	"net/http"
+	"strings"
 
+	"github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/dto"
 	delivery_helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/delivery/helper"
+	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 )
 
@@ -15,19 +20,47 @@ func NewAuthHandler(authUC inbound.AuthUsecase) *AuthHandler {
 	return &AuthHandler{authUC: authUC}
 }
 
-// Login exchanges the paperless exam access code for the node JWT used by the
-// student sitting endpoints.
+// Login handles POST /api/v1/auth/exam-login. It decodes {code}, calls Login,
+// and returns the frozen envelope. Invalid codes are 401, rate limits 429,
+// everything else 5xx via HandleError indirection.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Code string `json:"code"`
-	}
+	var req dto.LoginRequest
 	if !delivery_helper.DecodeJSON(w, r, &req) {
 		return
 	}
-	result, err := h.authUC.Login(r.Context(), req.Code)
-	if err != nil {
-		delivery_helper.HandleError(w, err)
-		return
+	var result *inbound.LoginResult
+	var err error
+	if rateLimited, ok := h.authUC.(inbound.RateLimitedAuthUsecase); ok {
+		result, err = rateLimited.LoginWithKey(r.Context(), req.Code, clientRateKey(r))
+	} else {
+		result, err = h.authUC.Login(r.Context(), req.Code)
 	}
-	delivery_helper.Success(w, http.StatusOK, "exam login successful", result)
+	if err != nil {
+		switch {
+		case errors.Is(err, node_error.ErrInvalidAccessCode), errors.Is(err, node_error.ErrUnauthorized):
+			delivery_helper.Error(w, http.StatusUnauthorized, "invalid access code")
+			return
+		case errors.Is(err, node_error.ErrTooManyAttempts), errors.Is(err, node_error.ErrIntegrityFlood):
+			delivery_helper.Error(w, http.StatusTooManyRequests, "too many login attempts")
+			return
+		case errors.Is(err, node_error.ErrExamNotLoaded):
+			delivery_helper.Error(w, http.StatusServiceUnavailable, "exam not loaded")
+			return
+		default:
+			delivery_helper.HandleError(w, err)
+			return
+		}
+	}
+	delivery_helper.Success(w, http.StatusOK, "login successful", result)
+}
+
+func clientRateKey(r *http.Request) string {
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
+		return host
+	}
+	if remote != "" {
+		return remote
+	}
+	return "unknown"
 }

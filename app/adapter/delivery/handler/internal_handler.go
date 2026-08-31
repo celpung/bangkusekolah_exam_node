@@ -9,11 +9,28 @@ import (
 )
 
 type InternalHandler struct {
-	bundleSvc *service.BundleService
+	bundleSvc  *service.BundleService
+	contentSvc *service.ContentService
 }
 
-func NewInternalHandler(bundleSvc *service.BundleService) *InternalHandler {
-	return &InternalHandler{bundleSvc: bundleSvc}
+func NewInternalHandler(bundleSvc *service.BundleService, contentServices ...*service.ContentService) *InternalHandler {
+	var contentSvc *service.ContentService
+	if len(contentServices) > 0 {
+		contentSvc = contentServices[0]
+	}
+	return &InternalHandler{bundleSvc: bundleSvc, contentSvc: contentSvc}
+}
+
+func (h *InternalHandler) ReloadCache(w http.ResponseWriter, r *http.Request) {
+	if h.contentSvc == nil {
+		delivery_helper.Error(w, http.StatusNotImplemented, "cache reload is unavailable")
+		return
+	}
+	if err := h.contentSvc.ReloadAllCaches(r.Context()); err != nil {
+		delivery_helper.HandleError(w, err)
+		return
+	}
+	delivery_helper.Success(w, http.StatusOK, "cache reloaded", nil)
 }
 
 // PushBundle accepts one exam bundle pushed by central. The route sits behind

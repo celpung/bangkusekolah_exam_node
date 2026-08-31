@@ -2,7 +2,7 @@
 // expired attempts), then push all finished unpushed attempts to central.
 // One-shot, follows the cmd/examrepair precedent. Runbook usage:
 //
-//	go run ./cmd/examharvest --force
+//	scripts/maintenance/run-tool.sh examharvest --force
 package main
 
 import (
@@ -57,7 +57,7 @@ func main() {
 	}
 	fmt.Printf("swept %d expired attempts\n", swept)
 
-	n, err := harvestSvc.DrainOnce(ctx)
+	n, err := harvestSvc.DrainFinal(ctx)
 	if err != nil {
 		fatalf("harvest: %v", err)
 	}

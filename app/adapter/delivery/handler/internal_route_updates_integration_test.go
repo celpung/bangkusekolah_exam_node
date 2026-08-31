@@ -67,7 +67,7 @@ func TestIntegration_InternalRouteSequentialSameExamUpdates(t *testing.T) {
 			return ids, nil
 		},
 		func() error { return db.Error })
-	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
+	r.Mount("/", node_router.NewRouter(node_security.NewJWTIssuer(cfg), readinessTestToken, nil, nil, contentSvc, attemptSvc, integritySvc, internalH, harvestH, readiness))
 
 	postBundle := func(b inbound.ExamNodeBundle) int {
 		body := bundleJSON(t, b)

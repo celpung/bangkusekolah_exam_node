@@ -9,16 +9,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "==> pull bundles from central (one per exam)"
-go run ./cmd/bundleload --pull
+scripts/maintenance/run-tool.sh bundleload --pull
 
 echo "==> preflight (per-bundle checksums + counts)"
-go run ./cmd/preflight
+scripts/maintenance/run-tool.sh preflight
 
 echo "==> liveness"
 curl -sf http://127.0.0.1:8080/livez
 
-echo "==> bundle checksums"
-go run ./cmd/bundleload --help | head -n 5
-# The real checksums are printed by bundleload itself; this is just a smoke.
-
+echo
 echo "==> deploy done — D-0 checklist is preflight PASS + liveness 200"

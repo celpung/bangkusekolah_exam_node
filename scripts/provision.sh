@@ -9,17 +9,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "==> docker compose up"
-docker compose up -d --wait
+docker compose up -d --build --wait
 
 echo "==> bundleload"
 if [[ "${1:-}" == "--bundle" ]]; then
-  go run ./cmd/bundleload --bundle "$2"
+  scripts/maintenance/run-tool.sh bundleload --bundle "$2"
 else
-  go run ./cmd/bundleload --pull
+  scripts/maintenance/run-tool.sh bundleload --pull
 fi
 
 echo "==> preflight"
-go run ./cmd/preflight
+scripts/maintenance/run-tool.sh preflight
 
 echo "==> readiness"
 curl -sf http://127.0.0.1:8080/readyz | jq . || curl -sf http://127.0.0.1:8080/readyz

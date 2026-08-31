@@ -22,8 +22,8 @@ type fakeNodeRepo struct {
 	activeErr    error
 }
 
-func (f *fakeNodeRepo) FindExam(_ context.Context) (*entity.Exam, error) {
-	if f.exam == nil {
+func (f *fakeNodeRepo) FindExamByID(_ context.Context, id string) (*entity.Exam, error) {
+	if f.exam == nil || f.exam.ID != id {
 		return nil, node_error.ErrExamNotLoaded
 	}
 	return f.exam, nil
@@ -39,6 +39,17 @@ func (f *fakeNodeRepo) FindParticipantByIDForUpdate(_ context.Context, id string
 		return p, nil
 	}
 	return nil, node_error.ErrParticipantNotFound
+}
+func (f *fakeNodeRepo) FindActiveAttemptByParticipantAndExam(_ context.Context, pid, examID string) (*entity.Attempt, error) {
+	if f.activeErr != nil {
+		return nil, f.activeErr
+	}
+	for _, a := range f.attempts {
+		if a.ParticipantID == pid && a.ExamID == examID && a.Status == entity.AttemptInProgress {
+			return a, nil
+		}
+	}
+	return nil, node_error.ErrAttemptNotFound
 }
 func (f *fakeNodeRepo) FindActiveAttemptByParticipant(_ context.Context, pid string) (*entity.Attempt, error) {
 	if f.activeErr != nil {
@@ -103,7 +114,7 @@ func nodeExam() *entity.Exam {
 	}
 }
 func nodeParticipant() *entity.Participant {
-	return &entity.Participant{ID: "part-1", StudentID: "stu-1", StudentName: "Budi", AccessCode: "ABCDEF-GHIJKL", AttemptCount: 0}
+	return &entity.Participant{ID: "part-1", ExamID: "exam-1", StudentID: "stu-1", StudentName: "Budi", AccessCode: "ABCDEF-GHIJKL", AttemptCount: 0}
 }
 
 func newAttemptService(repo *fakeNodeRepo) *AttemptService {
@@ -114,7 +125,7 @@ func TestStartAttemptCreatesDueAtAsMinDurationAndEndsAt(t *testing.T) {
 	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{}, answers: map[string][]entity.Answer{}}
 	svc := newAttemptService(repo)
 	before := time.Now()
-	att, err := svc.StartAttempt(context.Background(), "part-1")
+	att, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
 	if err != nil {
 		t.Fatalf("StartAttempt: %v", err)
 	}
@@ -133,10 +144,10 @@ func TestStartAttemptCreatesDueAtAsMinDurationAndEndsAt(t *testing.T) {
 }
 
 func TestStartAttemptResumesActiveAttempt(t *testing.T) {
-	existing := &entity.Attempt{ID: "att-old", ParticipantID: "part-1", StudentID: "stu-1", AttemptNo: 1, Status: entity.AttemptInProgress, StartedAt: time.Now().Add(-10 * time.Minute), DueAt: time.Now().Add(80 * time.Minute), MaxScore: 40}
-	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": {ID: "part-1", StudentID: "stu-1", AttemptCount: 1, LatestAttemptID: &existing.ID}}, attempts: map[string]*entity.Attempt{"att-old": existing}, answers: map[string][]entity.Answer{}}
+	existing := &entity.Attempt{ID: "att-old", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1", AttemptNo: 1, Status: entity.AttemptInProgress, StartedAt: time.Now().Add(-10 * time.Minute), DueAt: time.Now().Add(80 * time.Minute), MaxScore: 40}
+	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": {ID: "part-1", StudentID: "stu-1", ExamID: "exam-1", AttemptCount: 1, LatestAttemptID: &existing.ID}}, attempts: map[string]*entity.Attempt{"att-old": existing}, answers: map[string][]entity.Answer{}}
 	svc := newAttemptService(repo)
-	att, err := svc.StartAttempt(context.Background(), "part-1")
+	att, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
 	if err != nil {
 		t.Fatalf("StartAttempt: %v", err)
 	}
@@ -150,7 +161,7 @@ func TestStartAttemptRejectedWhenWindowClosed(t *testing.T) {
 	exam.StartsAt = time.Now().Add(time.Hour)
 	repo := &fakeNodeRepo{exam: exam, participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{}}
 	svc := newAttemptService(repo)
-	if _, err := svc.StartAttempt(context.Background(), "part-1"); !errors.Is(err, node_error.ErrExamNotOpen) {
+	if _, err := svc.StartAttempt(context.Background(), "part-1", "exam-1"); !errors.Is(err, node_error.ErrExamNotOpen) {
 		t.Fatalf("want ErrExamNotOpen, got %v", err)
 	}
 }
@@ -160,13 +171,13 @@ func TestStartAttemptRejectedWhenMaxAttemptsReached(t *testing.T) {
 	p.AttemptCount = 1
 	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": p}, attempts: map[string]*entity.Attempt{}}
 	svc := newAttemptService(repo)
-	if _, err := svc.StartAttempt(context.Background(), "part-1"); !errors.Is(err, node_error.ErrMaxAttemptsReached) {
+	if _, err := svc.StartAttempt(context.Background(), "part-1", "exam-1"); !errors.Is(err, node_error.ErrMaxAttemptsReached) {
 		t.Fatalf("want ErrMaxAttemptsReached, got %v", err)
 	}
 }
 
 func TestGetAttemptStateReturnsAnswersAndServerTime(t *testing.T) {
-	att := &entity.Attempt{ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(time.Hour)}
+	att := &entity.Attempt{ID: "att-1", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(time.Hour)}
 	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{"att-1": att}, answers: map[string][]entity.Answer{"att-1": {{ID: "ans-1", AttemptID: "att-1", ItemID: "item-1"}}}}
 	svc := newAttemptService(repo)
 	before := time.Now()
@@ -183,7 +194,7 @@ func TestGetAttemptStateReturnsAnswersAndServerTime(t *testing.T) {
 }
 
 func TestGetAttemptStateRejectsWrongOwner(t *testing.T) {
-	att := &entity.Attempt{ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", Status: entity.AttemptInProgress}
+	att := &entity.Attempt{ID: "att-1", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1", Status: entity.AttemptInProgress}
 	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{"att-1": att}}
 	svc := newAttemptService(repo)
 	if _, err := svc.GetAttemptState(context.Background(), "part-2", "att-1"); !errors.Is(err, node_error.ErrForbidden) {
@@ -194,7 +205,7 @@ func TestGetAttemptStateRejectsWrongOwner(t *testing.T) {
 func TestStartAttemptPropagatesDBErrorOnActiveLookup(t *testing.T) {
 	repo := &fakeNodeRepo{exam: nodeExam(), participants: map[string]*entity.Participant{"part-1": nodeParticipant()}, attempts: map[string]*entity.Attempt{}, activeErr: errors.New("db unavailable")}
 	svc := newAttemptService(repo)
-	_, err := svc.StartAttempt(context.Background(), "part-1")
+	_, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
 	if err == nil || err.Error() != "db unavailable" {
 		t.Fatalf("want db unavailable, got %v", err)
 	}

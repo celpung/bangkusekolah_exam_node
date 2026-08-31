@@ -13,10 +13,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestNodeFindExamSelectsRow(t *testing.T) {
+func TestNodeFindExamByIDSelectsRow(t *testing.T) {
 	db, recorded := newDryRunDB(t)
-	_, _ = (&nodeRepository{db: db}).FindExam(context.Background())
-	requireSQLContaining(t, recorded, "SELECT * FROM `exams`")
+	_, _ = (&nodeRepository{db: db}).FindExamByID(context.Background(), "exam-1")
+	requireSQLContaining(t, recorded, "SELECT * FROM `exams`", "WHERE id = ?")
 }
 
 func TestNodeFindParticipantByIDSelectsRow(t *testing.T) {
@@ -94,7 +94,7 @@ func TestNodeRepositoryUsesTxFromContext(t *testing.T) {
 	db, recorded := newDryRunDB(t)
 	tx := db.Session(&gorm.Session{})
 	ctx := helper.WithTx(context.Background(), tx)
-	_, _ = (&nodeRepository{db: db}).FindExam(ctx)
+	_, _ = (&nodeRepository{db: db}).FindExamByID(ctx, "exam-1")
 	// dry-run still records the query; the point is GetDB(tx) does not panic and uses tx
 	requireSQLContaining(t, recorded, "SELECT * FROM `exams`")
 }

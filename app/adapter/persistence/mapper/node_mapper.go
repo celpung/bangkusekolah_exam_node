@@ -17,7 +17,7 @@ func ToExamEntity(m *model.Exam) *entity.Exam {
 		StartsAt: m.StartsAt, EndsAt: m.EndsAt, DurationMinutes: m.DurationMinutes, MaxAttempts: m.MaxAttempts,
 		ShuffleQuestions: m.ShuffleQuestions, ShuffleOptions: m.ShuffleOptions, ShowResultImmediately: m.ShowResultImmediately,
 		PassingScore: m.PassingScore, ResultSelectionPolicy: m.ResultSelectionPolicy, MaxScore: m.MaxScore,
-		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, LoadedAt: m.LoadedAt,
+		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, FencedAt: m.FencedAt, LoadedAt: m.LoadedAt,
 	}
 }
 
@@ -32,6 +32,7 @@ func ToExamModel(e *entity.Exam) *model.Exam {
 		PassingScore: e.PassingScore, ResultSelectionPolicy: e.ResultSelectionPolicy, MaxScore: e.MaxScore,
 		HasManualItems: e.HasManualItems, AccessCodePrefix: e.AccessCodePrefix, BundleChecksum: e.BundleChecksum,
 		ContentHash: e.ContentHash,
+		FencedAt:    e.FencedAt,
 		LoadedAt:    time.Now(),
 	}
 }
@@ -97,7 +98,7 @@ func ToIntegrityEventEntity(m *model.IntegrityEvent) *entity.IntegrityEvent {
 	if m.MetadataJSON != nil {
 		_ = json.Unmarshal([]byte(*m.MetadataJSON), &meta)
 	}
-	var desc *string
+	desc := m.Description
 	return &entity.IntegrityEvent{ID: m.ID, AttemptID: m.AttemptID, StudentID: m.StudentID, EventType: m.EventType, Description: desc, MetadataJSON: meta, CreatedAt: m.CreatedAt}
 }
 

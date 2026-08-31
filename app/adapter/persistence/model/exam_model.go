@@ -3,25 +3,26 @@ package model
 import "time"
 
 type Exam struct {
-	ID                    string    `gorm:"primaryKey;type:varchar(36)"`
-	DeploymentID          string    `gorm:"type:varchar(36);not null"`
-	Title                 string    `gorm:"type:varchar(255);not null"`
-	Instruction           *string   `gorm:"type:text"`
-	StartsAt              time.Time `gorm:"type:datetime;not null"`
-	EndsAt                time.Time `gorm:"type:datetime;not null"`
-	DurationMinutes       int       `gorm:"not null"`
-	MaxAttempts           int       `gorm:"not null"`
-	ShuffleQuestions      bool      `gorm:"type:tinyint(1);not null"`
-	ShuffleOptions        bool      `gorm:"type:tinyint(1);not null"`
-	ShowResultImmediately bool      `gorm:"type:tinyint(1);not null"`
-	PassingScore          *float64  `gorm:"type:decimal(5,2)"`
-	ResultSelectionPolicy string    `gorm:"type:varchar(30);not null"`
-	MaxScore              float64   `gorm:"type:decimal(8,2);not null"`
-	HasManualItems        bool      `gorm:"type:tinyint(1);not null"`
-	AccessCodePrefix      string    `gorm:"type:varchar(10);not null"`
-	BundleChecksum        string    `gorm:"type:varchar(80);not null"`
-	ContentHash           string    `gorm:"type:varchar(80);not null;default:''"`
-	LoadedAt              time.Time `gorm:"type:datetime;not null"`
+	ID                    string     `gorm:"primaryKey;type:varchar(36)"`
+	DeploymentID          string     `gorm:"type:varchar(36);not null"`
+	Title                 string     `gorm:"type:varchar(255);not null"`
+	Instruction           *string    `gorm:"type:text"`
+	StartsAt              time.Time  `gorm:"type:datetime;not null"`
+	EndsAt                time.Time  `gorm:"type:datetime;not null"`
+	DurationMinutes       int        `gorm:"not null"`
+	MaxAttempts           int        `gorm:"not null"`
+	ShuffleQuestions      bool       `gorm:"type:tinyint(1);not null"`
+	ShuffleOptions        bool       `gorm:"type:tinyint(1);not null"`
+	ShowResultImmediately bool       `gorm:"type:tinyint(1);not null"`
+	PassingScore          *float64   `gorm:"type:decimal(5,2)"`
+	ResultSelectionPolicy string     `gorm:"type:varchar(30);not null"`
+	MaxScore              float64    `gorm:"type:decimal(8,2);not null"`
+	HasManualItems        bool       `gorm:"type:tinyint(1);not null"`
+	AccessCodePrefix      string     `gorm:"type:varchar(10);not null"`
+	BundleChecksum        string     `gorm:"type:varchar(80);not null"`
+	ContentHash           string     `gorm:"type:varchar(80);not null;default:''"`
+	FencedAt              *time.Time `gorm:"type:datetime"`
+	LoadedAt              time.Time  `gorm:"type:datetime;not null"`
 }
 
 func (Exam) TableName() string { return "exams" }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
+	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 )
 
@@ -41,7 +42,12 @@ func (f *fakeSweeperRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) er
 	f.attempts[a.ID] = a
 	return nil
 }
-func (f *fakeSweeperRepo) FindExam(_ context.Context) (*entity.Exam, error) { return f.exam, nil }
+func (f *fakeSweeperRepo) FindExamByID(_ context.Context, id string) (*entity.Exam, error) {
+	if f.exam != nil && f.exam.ID == id {
+		return f.exam, nil
+	}
+	return nil, node_error.ErrExamNotLoaded
+}
 
 func sweeperFixture() (*SweeperService, *fakeSweeperRepo) {
 	repo := &fakeSweeperRepo{
@@ -56,8 +62,8 @@ func TestSweeperFinalizesPastDueAttempts(t *testing.T) {
 	score := 5.0
 	sweeper, repo := sweeperFixture()
 	repo.attempts = map[string]*entity.Attempt{
-		"att-past":   {ID: "att-past", ParticipantID: "part-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
-		"att-future": {ID: "att-future", ParticipantID: "part-2", Status: entity.AttemptInProgress, DueAt: time.Now().Add(time.Hour), MaxScore: 10},
+		"att-past":   {ID: "att-past", ParticipantID: "part-1", ExamID: "exam-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
+		"att-future": {ID: "att-future", ParticipantID: "part-2", ExamID: "exam-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(time.Hour), MaxScore: 10},
 	}
 	repo.answers = map[string][]entity.Answer{
 		"att-past": {{ID: "ans-1", AttemptID: "att-past", Score: &score, GradingStatus: entity.GradingAutoGraded}},
@@ -89,7 +95,7 @@ func TestSweeperIsNoopWhenNoneExpired(t *testing.T) {
 func TestSweeperManualExamWithoutAnswerRow(t *testing.T) {
 	sweeper, repo := sweeperFixture()
 	repo.exam.HasManualItems = true
-	repo.attempts["att-manual"] = &entity.Attempt{ID: "att-manual", ParticipantID: "part-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10}
+	repo.attempts["att-manual"] = &entity.Attempt{ID: "att-manual", ParticipantID: "part-1", ExamID: "exam-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10}
 	n, err := sweeper.SweepExpiredAttempts(context.Background())
 	if err != nil || n != 1 {
 		t.Fatalf("sweep: n=%d err=%v", n, err)
@@ -109,8 +115,8 @@ func TestSweeperReturnsErrorWhenFinalizeFails(t *testing.T) {
 	score := 5.0
 	sweeper, repo := sweeperFixture()
 	repo.attempts = map[string]*entity.Attempt{
-		"att-ok":  {ID: "att-ok", ParticipantID: "part-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
-		"att-bad": {ID: "att-bad", ParticipantID: "part-2", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
+		"att-ok":  {ID: "att-ok", ParticipantID: "part-1", ExamID: "exam-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
+		"att-bad": {ID: "att-bad", ParticipantID: "part-2", ExamID: "exam-1", Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 10},
 	}
 	repo.answers = map[string][]entity.Answer{
 		"att-ok":  {{ID: "ans-1", AttemptID: "att-ok", Score: &score, GradingStatus: entity.GradingAutoGraded}},
@@ -156,7 +162,7 @@ func TestSubmitVsSweeperLostRaceIsIdempotent(t *testing.T) {
 	// simulate the sweeper's stale expired list: it still holds the attempt as
 	// in_progress because the list was computed before the submit landed
 	subRepo.attempts["att-stale"] = &entity.Attempt{
-		ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1",
+		ID: "att-1", ParticipantID: "part-1", StudentID: "stu-1", ExamID: "exam-1",
 		Status: entity.AttemptInProgress, DueAt: time.Now().Add(-time.Minute), MaxScore: 30,
 	}
 	subRepo.answers["att-1"] = []entity.Answer{}
