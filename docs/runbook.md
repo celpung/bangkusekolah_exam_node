@@ -32,7 +32,7 @@ Debian/Ubuntu VPS can install the repository prerequisites and continue into the
 same setup flow with one terminal command:
 
 ```bash
-curl -fsSL https://services-bangkusekolah.com/node/setup.sh | sh
+curl -fsSL https://services.bangkusekolah.com/node/setup.sh | sh
 ```
 
 The bootstrap itself installs `bash`, `ca-certificates`, `curl`, and `git` via
