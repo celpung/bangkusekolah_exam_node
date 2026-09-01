@@ -37,6 +37,27 @@ as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y bash ca-certificat
 command -v git >/dev/null 2>&1 || fail 'git installation failed'
 command -v bash >/dev/null 2>&1 || fail 'bash installation failed'
 
+printf '%s\n' '==> install Docker and Compose'
+if ! command -v docker >/dev/null 2>&1; then
+  as_root apt-get install -y docker.io
+fi
+command -v docker >/dev/null 2>&1 || fail 'Docker installation failed'
+
+if ! docker compose version >/dev/null 2>&1; then
+  if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    as_root apt-get install -y docker-compose-v2
+  elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+    as_root apt-get install -y docker-compose-plugin
+  else
+    fail 'Docker Compose package is unavailable; expected docker-compose-v2 or docker-compose-plugin'
+  fi
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+  as_root systemctl enable --now docker >/dev/null || fail 'failed to start Docker'
+fi
+docker compose version >/dev/null 2>&1 || fail 'Docker Compose installation failed'
+
 printf '%s\n' '==> prepare Exam Node source'
 as_root mkdir -p "$(dirname "$INSTALL_DIR")"
 if [ -e "$INSTALL_DIR" ]; then

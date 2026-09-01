@@ -35,7 +35,7 @@ same setup flow with one terminal command:
 curl -fsSL https://services.bangkusekolah.com/node/setup.sh | sh
 ```
 
-The bootstrap itself installs `bash`, `ca-certificates`, `curl`, and `git` via
+The bootstrap itself installs `bash`, `ca-certificates`, `curl`, `git`, Docker, and Docker Compose via
 `apt-get`, clones the Exam Node repository to `/opt/bangkusekolah/exam-node`,
 and invokes the local Bash `setup.sh` with input connected to `/dev/tty`. It
 does not contain node tokens, JWT secrets, database passwords, or other
