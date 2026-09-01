@@ -20,6 +20,14 @@ esac
 for dependency in git ca-certificates curl; do
   grep -F "$dependency" "$BOOTSTRAP" >/dev/null 2>&1 || fail "missing dependency: $dependency"
 done
+for docker_step in \
+  'apt-get install -y docker.io' \
+  'docker-compose-v2' \
+  'docker-compose-plugin' \
+  'docker compose version' \
+  'systemctl enable --now docker'; do
+  grep -F "$docker_step" "$BOOTSTRAP" >/dev/null 2>&1 || fail "missing Docker bootstrap step: $docker_step"
+done
 
 grep -F 'git clone' "$BOOTSTRAP" >/dev/null 2>&1 || fail 'remote installer does not clone the Exam Node source'
 grep -F '/dev/tty' "$BOOTSTRAP" >/dev/null 2>&1 || fail 'remote installer does not preserve interactive terminal input'
