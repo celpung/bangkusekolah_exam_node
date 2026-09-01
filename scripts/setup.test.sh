@@ -52,6 +52,11 @@ if grep -F 'systemctl enable --now docker >/dev/null 2>&1 || true' "$SETUP" >/de
   exit 1
 fi
 
+if ! grep -F 'docker-compose-v2' "$SETUP" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL: setup does not support the Ubuntu docker-compose-v2 package' >&2
+  exit 1
+fi
+
 sh "$ROOT/scripts/remote-installer.test.sh"
 bash "$ROOT/scripts/nginx-config.test.sh"
 printf '%s\n' 'PASS: setup parser and production guards'

@@ -297,7 +297,13 @@ if command -v apt-get >/dev/null 2>&1; then
     apt-get install -y docker.io
   fi
   if ! docker compose version >/dev/null 2>&1; then
-    apt-get install -y docker-compose-plugin
+    if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+      apt-get install -y docker-compose-v2
+    elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+      apt-get install -y docker-compose-plugin
+    else
+      fail 'Docker Compose package is unavailable; expected docker-compose-v2 or docker-compose-plugin'
+    fi
   fi
   if ! command -v nginx >/dev/null 2>&1; then
     apt-get install -y nginx
