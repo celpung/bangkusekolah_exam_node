@@ -48,14 +48,18 @@ func TestLoginReturnsTokenInResponseEnvelope(t *testing.T) {
 
 type fakeStartAttemptUC struct {
 	inbound.AttemptUsecase
-	startFn func(context.Context, string, string) (*entity.Attempt, error)
+	startFn           func(context.Context, string, string) (*entity.Attempt, error)
+	startWithDeviceFn func(context.Context, string, string, string) (*entity.Attempt, error)
 }
 
 func (f *fakeStartAttemptUC) StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
 	return f.startFn(ctx, participantID, examID)
 }
 
-func (f *fakeStartAttemptUC) StartAttemptWithDevice(ctx context.Context, participantID, examID, _ string) (*entity.Attempt, error) {
+func (f *fakeStartAttemptUC) StartAttemptWithDevice(ctx context.Context, participantID, examID, deviceID string) (*entity.Attempt, error) {
+	if f.startWithDeviceFn != nil {
+		return f.startWithDeviceFn(ctx, participantID, examID, deviceID)
+	}
 	return f.startFn(ctx, participantID, examID)
 }
 
@@ -99,5 +103,33 @@ func TestStartRejectsExamPathDifferentFromJWT(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("foreign exam start status = %d, want 403; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStudentStartPassesDeviceIDToAttemptService(t *testing.T) {
+	var gotDevice string
+	uc := &fakeStartAttemptUC{
+		startFn: func(_ context.Context, _, _ string) (*entity.Attempt, error) {
+			return &entity.Attempt{ID: "att-1", ExamID: "exam-1"}, nil
+		},
+		startWithDeviceFn: func(_ context.Context, participantID, examID, deviceID string) (*entity.Attempt, error) {
+			gotDevice = deviceID
+			return &entity.Attempt{ID: "att-1", ParticipantID: participantID, ExamID: examID}, nil
+		},
+	}
+	r := chi.NewRouter()
+	r.Use(stubAuth("part-1", "exam-1"))
+	r.Post("/api/v1/student/exams/{examId}/attempts", NewStudentExamHandler(nil, uc).StartAttempt)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/student/exams/exam-1/attempts", bytes.NewBufferString(`{"device_id":"install-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("student start status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if gotDevice != "install-1" {
+		t.Fatalf("student start device = %q, want install-1", gotDevice)
 	}
 }
