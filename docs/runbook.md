@@ -6,10 +6,42 @@ After the node has been registered in Central and the repository is available on
 
 ```bash
 cd /opt/bangkusekolah/exam-node
-sudo ./setup.sh -central_url https://central.example.id
+sudo ./setup.sh -central_url https://central.example.id -domain node.example.com -email ops@example.com
 ```
 
-The script prompts for `CENTRAL_NODE_TOKEN` without echoing it and generates `NODE_JWT_SECRET` when it is not already present in `.env`. It installs/verifies Docker, builds `bundleload`, `preflight`, and `examharvest` inside a temporary Go container, starts the Compose stack, enables systemd startup, pulls bundles, runs preflight, and checks readiness. Go is not installed on the VPS host.
+In interactive mode, the script prompts for the Central URL, `CENTRAL_NODE_TOKEN`
+without echoing it, the public Node domain, and the ACME email when those values are omitted. It
+installs/verifies Docker, Nginx, and Certbot, creates the managed reverse-proxy site
+under `/etc/nginx/sites-available/` and its symlink under
+`/etc/nginx/sites-enabled/`, builds `bundleload`, `preflight`, and `examharvest`
+inside a temporary Go container, starts Nginx with an ACME challenge endpoint,
+obtains/renews a Let's Encrypt certificate through Certbot webroot, switches the
+site to HTTPS with HTTP redirect, starts MySQL, pulls bundles, runs preflight,
+starts the actual `examnode` Compose service, enables systemd startup and the
+Certbot renewal timer, and checks local/public readiness. Go is not installed on
+the VPS host.
+
+The server image is built from `./cmd/examnode`, never from Central's
+`service/cmd/api`. The first pull must use the actual `examnode` repository and
+runtime so the Node student routes are present.
+
+## Remote bootstrap setup
+
+When Central publishes the embedded bootstrap at `/node/setup.sh`, a new
+Debian/Ubuntu VPS can install the repository prerequisites and continue into the
+same setup flow with one terminal command:
+
+```bash
+curl -fsSL https://services-bangkusekolah.com/node/setup.sh | sh
+```
+
+The bootstrap itself installs `bash`, `ca-certificates`, `curl`, and `git` via
+`apt-get`, clones the Exam Node repository to `/opt/bangkusekolah/exam-node`,
+and invokes the local Bash `setup.sh` with input connected to `/dev/tty`. It
+does not contain node tokens, JWT secrets, database passwords, or other
+credentials. The command requires `curl`, POSIX `sh`, and either root or `sudo`
+to exist before the first download. The current bootstrap targets Debian and
+Ubuntu only and follows the `main` branch until an immutable release reference is chosen.
 
 Use `-skip_pull` only when no exam has been deployed to the node yet. Use `-skip_preflight` only for infrastructure preparation; it is not a production readiness result.
 
@@ -21,10 +53,11 @@ Use `-skip_pull` only when no exam has been deployed to the node yet. Use `-skip
    ```
    Copy `dist/tools/*` to the VPS deployment directory as `bin/` and copy `scripts/maintenance/run-tool.sh`. The VPS needs Docker, not Go.
 1. Provision VPS from snapshot or `scripts/provision.sh` (never by hand).
-2. `docker compose up -d --build --wait` — wait for mysql healthy.
-3. Register node in central: `POST /api/v1/exam-nodes` (admin) → save `token` once.
-4. Set `CENTRAL_NODE_TOKEN` and `CENTRAL_BASE_URL` in `.env`.
-5. Verify NTP: `timedatectl status` or `ntpq -p` — offset < 2s, else `preflight` fails.
+2. Register node in central: `POST /api/v1/exam-nodes` (admin) → save `token` once.
+3. Set `CENTRAL_NODE_TOKEN` and `CENTRAL_BASE_URL` in `.env`.
+4. `docker compose up -d --wait mysql` — wait for MySQL healthy before loading bundles.
+5. `docker compose build examnode` — build the actual `cmd/examnode` server image.
+6. Verify NTP: `timedatectl status` or `ntpq -p` — offset < 2s, else `preflight` fails.
 
 ## Operational tools
 

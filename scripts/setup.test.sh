@@ -14,6 +14,20 @@ case "$help_output" in
     exit 1
     ;;
 esac
+case "$help_output" in
+  *"-domain"* ) ;;
+  *)
+    printf '%s\n' 'FAIL: help does not document -domain' >&2
+    exit 1
+    ;;
+esac
+case "$help_output" in
+  *"-email"* ) ;;
+  *)
+    printf '%s\n' 'FAIL: help does not document -email' >&2
+    exit 1
+    ;;
+esac
 
 set +e
 $SETUP -central_url http://central.example.test >/dev/null 2>&1
@@ -33,4 +47,11 @@ if [[ "$status" -eq 0 ]]; then
   exit 1
 fi
 
+if grep -F 'systemctl enable --now docker >/dev/null 2>&1 || true' "$SETUP" >/dev/null 2>&1; then
+  printf '%s\n' 'FAIL: setup silently ignores Docker startup failure' >&2
+  exit 1
+fi
+
+sh "$ROOT/scripts/remote-installer.test.sh"
+bash "$ROOT/scripts/nginx-config.test.sh"
 printf '%s\n' 'PASS: setup parser and production guards'
