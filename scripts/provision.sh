@@ -8,8 +8,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> docker compose up"
-docker compose up -d --build --wait
+echo "==> mysql"
+docker compose up -d --wait mysql
+
+echo "==> build examnode image"
+docker compose build examnode
 
 echo "==> bundleload"
 if [[ "${1:-}" == "--bundle" ]]; then
@@ -20,6 +23,9 @@ fi
 
 echo "==> preflight"
 scripts/maintenance/run-tool.sh preflight
+
+echo "==> examnode"
+docker compose up -d --wait examnode
 
 echo "==> readiness"
 curl -sf http://127.0.0.1:8080/readyz | jq . || curl -sf http://127.0.0.1:8080/readyz
