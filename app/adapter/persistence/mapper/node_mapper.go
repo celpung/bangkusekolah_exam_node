@@ -14,10 +14,10 @@ func ToExamEntity(m *model.Exam) *entity.Exam {
 	}
 	return &entity.Exam{
 		ID: m.ID, DeploymentID: m.DeploymentID, Title: m.Title, Instruction: m.Instruction,
-		StartsAt: m.StartsAt, EndsAt: m.EndsAt, DurationMinutes: m.DurationMinutes, MaxAttempts: m.MaxAttempts,
+		StartsAt: m.StartsAt.UTC(), EndsAt: m.EndsAt.UTC(), DurationMinutes: m.DurationMinutes, MaxAttempts: m.MaxAttempts,
 		ShuffleQuestions: m.ShuffleQuestions, ShuffleOptions: m.ShuffleOptions, ShowResultImmediately: m.ShowResultImmediately,
 		PassingScore: m.PassingScore, ResultSelectionPolicy: m.ResultSelectionPolicy, MaxScore: m.MaxScore,
-		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, FencedAt: m.FencedAt, LoadedAt: m.LoadedAt,
+		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, FencedAt: utcTimePtr(m.FencedAt), LoadedAt: m.LoadedAt.UTC(),
 	}
 }
 
@@ -27,14 +27,22 @@ func ToExamModel(e *entity.Exam) *model.Exam {
 	}
 	return &model.Exam{
 		ID: e.ID, DeploymentID: e.DeploymentID, Title: e.Title, Instruction: e.Instruction,
-		StartsAt: e.StartsAt, EndsAt: e.EndsAt, DurationMinutes: e.DurationMinutes, MaxAttempts: e.MaxAttempts,
+		StartsAt: e.StartsAt.UTC(), EndsAt: e.EndsAt.UTC(), DurationMinutes: e.DurationMinutes, MaxAttempts: e.MaxAttempts,
 		ShuffleQuestions: e.ShuffleQuestions, ShuffleOptions: e.ShuffleOptions, ShowResultImmediately: e.ShowResultImmediately,
 		PassingScore: e.PassingScore, ResultSelectionPolicy: e.ResultSelectionPolicy, MaxScore: e.MaxScore,
 		HasManualItems: e.HasManualItems, AccessCodePrefix: e.AccessCodePrefix, BundleChecksum: e.BundleChecksum,
 		ContentHash: e.ContentHash,
-		FencedAt:    e.FencedAt,
-		LoadedAt:    time.Now(),
+		FencedAt:    utcTimePtr(e.FencedAt),
+		LoadedAt:    time.Now().UTC(),
 	}
+}
+
+func utcTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	utc := value.UTC()
+	return &utc
 }
 
 func ToParticipantEntity(m *model.Participant) *entity.Participant {

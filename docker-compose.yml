@@ -1,12 +1,13 @@
 services:
   mysql:
     image: mysql:8.0
-    command: --max-connections=200 --innodb-buffer-pool-size=1G
+    command: --max-connections=200 --innodb-buffer-pool-size=1G --default-time-zone=+00:00
     environment:
       MYSQL_DATABASE: examnode
       MYSQL_USER: examnode
       MYSQL_PASSWORD: examnode
       MYSQL_ROOT_PASSWORD: examnode
+      TZ: UTC
     ports:
       - "127.0.0.1:3306:3306"
     healthcheck:
@@ -24,7 +25,8 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      DB_DSN: "examnode:examnode@tcp(mysql:3306)/examnode?parseTime=true&charset=utf8mb4&collation=utf8mb4_general_ci"
+      DB_DSN: "examnode:examnode@tcp(mysql:3306)/examnode?parseTime=true&loc=UTC&charset=utf8mb4&collation=utf8mb4_general_ci"
+      TZ: UTC
       NODE_JWT_SECRET: "${NODE_JWT_SECRET:?set a 32+ character secret}"
       CENTRAL_BASE_URL: "${CENTRAL_BASE_URL:?central base URL}"
       CENTRAL_NODE_TOKEN: "${CENTRAL_NODE_TOKEN:?node bearer token from central registration}"

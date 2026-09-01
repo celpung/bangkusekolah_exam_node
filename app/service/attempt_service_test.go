@@ -117,6 +117,10 @@ type stubNodeID struct{ id string }
 
 func (s stubNodeID) NewID() string { return s.id }
 
+type fixedAttemptClock struct{ now time.Time }
+
+func (c fixedAttemptClock) Now() time.Time { return c.now }
+
 func nodeExam() *entity.Exam {
 	now := time.Now()
 	return &entity.Exam{
@@ -297,6 +301,35 @@ func TestStartAttemptRejectedWhenWindowClosed(t *testing.T) {
 	svc := newAttemptService(repo)
 	if _, err := svc.StartAttempt(context.Background(), "part-1", "exam-1"); !errors.Is(err, node_error.ErrExamNotOpen) {
 		t.Fatalf("want ErrExamNotOpen, got %v", err)
+	}
+}
+
+func TestStartAttemptUsesUTCClockAndPersistsUTCInstants(t *testing.T) {
+	loc := time.FixedZone("Asia/Bangkok", 7*60*60)
+	now := time.Date(2026, 9, 2, 15, 0, 0, 0, loc)
+	exam := &entity.Exam{
+		ID: "exam-1", DeploymentID: "dep-1", Title: "UTS",
+		StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour),
+		DurationMinutes: 30, MaxAttempts: 1, MaxScore: 40,
+	}
+	repo := &fakeNodeRepo{
+		exam:         exam,
+		participants: map[string]*entity.Participant{"part-1": nodeParticipant()},
+		attempts:     map[string]*entity.Attempt{},
+		answers:      map[string][]entity.Answer{},
+	}
+	svc := NewAttemptServiceWithClock(repo, stubNodeTx{}, stubNodeID{id: "att-utc"}, fixedAttemptClock{now: now})
+
+	created, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
+	if err != nil {
+		t.Fatalf("StartAttempt: %v", err)
+	}
+	if !created.StartedAt.Equal(now) || created.StartedAt.Location() != time.UTC {
+		t.Fatalf("started_at = %v (%v), want UTC instant %v", created.StartedAt, created.StartedAt.Location(), now)
+	}
+	wantDue := now.Add(30 * time.Minute)
+	if !created.DueAt.Equal(wantDue) || created.DueAt.Location() != time.UTC {
+		t.Fatalf("due_at = %v (%v), want UTC instant %v", created.DueAt, created.DueAt.Location(), wantDue)
 	}
 }
 

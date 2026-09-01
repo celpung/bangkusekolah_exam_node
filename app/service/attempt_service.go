@@ -16,14 +16,40 @@ import (
 
 type IDGenerator interface{ NewID() string }
 
+// AttemptClock is the server clock used for every attempt/window decision.
+// Keeping it injectable makes the boundary deterministic in tests and keeps
+// all persisted attempt timestamps in the same UTC representation.
+type AttemptClock interface{ Now() time.Time }
+
+type systemAttemptClock struct{}
+
+func (systemAttemptClock) Now() time.Time { return time.Now().UTC() }
+
 type AttemptService struct {
 	repo      outbound_repository.NodeRepository
 	txManager outbound.TxManager
 	idGen     IDGenerator
+	clock     AttemptClock
 }
 
 func NewAttemptService(repo outbound_repository.NodeRepository, txManager outbound.TxManager, idGen IDGenerator) *AttemptService {
-	return &AttemptService{repo: repo, txManager: txManager, idGen: idGen}
+	return NewAttemptServiceWithClock(repo, txManager, idGen, systemAttemptClock{})
+}
+
+func NewAttemptServiceWithClock(repo outbound_repository.NodeRepository, txManager outbound.TxManager, idGen IDGenerator, clock AttemptClock) *AttemptService {
+	if clock == nil {
+		clock = systemAttemptClock{}
+	}
+	return &AttemptService{repo: repo, txManager: txManager, idGen: idGen, clock: clock}
+}
+
+func (s *AttemptService) now() time.Time {
+	if s.clock == nil {
+		// Keep zero-value/test-created services safe while all production wiring
+		// goes through NewAttemptService and receives the UTC system clock.
+		return time.Now().UTC()
+	}
+	return s.clock.Now().UTC()
 }
 
 func (s *AttemptService) StartAttempt(ctx context.Context, participantID, examID string) (*entity.Attempt, error) {
@@ -46,7 +72,7 @@ func (s *AttemptService) startAttempt(ctx context.Context, participantID, examID
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	now := s.now()
 	if now.Before(exam.StartsAt) || now.After(exam.EndsAt) {
 		return nil, node_error.ErrExamNotOpen
 	}
@@ -120,7 +146,7 @@ func (s *AttemptService) startAttempt(ctx context.Context, participantID, examID
 				}
 				active.DeviceID = deviceID
 			}
-			if time.Now().After(active.DueAt) {
+			if now.After(active.DueAt) {
 				if _, _, err := finalizeAttemptLocked(txCtx, s.repo, active.ID, true); err != nil {
 					return err
 				}
@@ -174,7 +200,8 @@ func (s *AttemptService) GetAttemptState(ctx context.Context, participantID, att
 	if attempt.ParticipantID != participantID {
 		return nil, node_error.ErrForbidden
 	}
-	if attempt.Status == entity.AttemptInProgress && time.Now().After(attempt.DueAt) {
+	now := s.now()
+	if attempt.Status == entity.AttemptInProgress && now.After(attempt.DueAt) {
 		finalized, _, err := finalizeAttempt(ctx, s.repo, s.txManager, attempt.ID, true)
 		if err != nil {
 			return nil, err
@@ -185,7 +212,7 @@ func (s *AttemptService) GetAttemptState(ctx context.Context, participantID, att
 	if err != nil {
 		return nil, err
 	}
-	return &inbound.AttemptState{Attempt: attempt, Answers: answers, ServerTime: time.Now().UTC()}, nil
+	return &inbound.AttemptState{Attempt: attempt, Answers: answers, ServerTime: now}, nil
 }
 
 func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID string, answerJSON map[string]interface{}, answerText *string, clientSeq int64, participantID string) (*entity.Answer, error) {
@@ -199,7 +226,8 @@ func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID s
 	if attempt.Status != entity.AttemptInProgress {
 		return nil, node_error.ErrAttemptLocked
 	}
-	if time.Now().After(attempt.DueAt) {
+	now := s.now()
+	if now.After(attempt.DueAt) {
 		return nil, node_error.ErrAttemptExpired
 	}
 	item, err := s.repo.FindItemByID(ctx, itemID)
@@ -222,7 +250,7 @@ func (s *AttemptService) AutosaveAnswer(ctx context.Context, attemptID, itemID s
 		ID: s.idGen.NewID(), AttemptID: attemptID, ItemID: itemID,
 		AnswerJSON: answerJSON, AnswerText: answerText,
 		Score: scorePtr, MaxScore: item.Points, GradingStatus: gradingStatus,
-		LastSavedAt: time.Now().UTC(), ClientSeq: clientSeq,
+		LastSavedAt: now, ClientSeq: clientSeq,
 	}
 	return s.repo.UpsertAnswer(ctx, answer)
 }
@@ -241,7 +269,7 @@ func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participa
 	if attempt.Status != entity.AttemptInProgress {
 		return nil, node_error.ErrAttemptLocked
 	}
-	if time.Now().After(attempt.DueAt) {
+	if s.now().After(attempt.DueAt) {
 		return nil, node_error.ErrAttemptExpired
 	}
 	result, _, err := finalizeAttempt(ctx, s.repo, s.txManager, attemptID, false)
