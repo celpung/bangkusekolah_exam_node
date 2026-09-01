@@ -31,7 +31,15 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 }
 
 func Error(w http.ResponseWriter, status int, message string) {
-	WriteJSON(w, status, map[string]interface{}{"error": message})
+	ErrorWithCode(w, status, "", message)
+}
+
+func ErrorWithCode(w http.ResponseWriter, status int, code, message string) {
+	payload := map[string]interface{}{"error": message}
+	if code != "" {
+		payload["code"] = code
+	}
+	WriteJSON(w, status, payload)
 }
 
 // HandleError maps domain errors to HTTP statuses. Anything unrecognized is a
@@ -39,19 +47,19 @@ func Error(w http.ResponseWriter, status int, message string) {
 func HandleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, node_error.ErrUnauthorized):
-		Error(w, http.StatusUnauthorized, "unauthorized")
+		ErrorWithCode(w, http.StatusUnauthorized, errorCode(err), "unauthorized")
 	case errors.Is(err, node_error.ErrForbidden),
 		errors.Is(err, node_error.ErrAttemptLocked):
-		Error(w, http.StatusForbidden, "forbidden")
+		ErrorWithCode(w, http.StatusForbidden, errorCode(err), "forbidden")
 	case errors.Is(err, node_error.ErrAttemptDeviceMismatch):
-		Error(w, http.StatusConflict, "exam attempt belongs to another device")
+		ErrorWithCode(w, http.StatusConflict, errorCode(err), "exam attempt belongs to another device")
 	case errors.Is(err, node_error.ErrInvalidAccessCode):
-		Error(w, http.StatusUnauthorized, "invalid access code")
+		ErrorWithCode(w, http.StatusUnauthorized, errorCode(err), "invalid access code")
 	case errors.Is(err, node_error.ErrTooManyAttempts),
 		errors.Is(err, node_error.ErrIntegrityFlood):
-		Error(w, http.StatusTooManyRequests, "too many requests")
+		ErrorWithCode(w, http.StatusTooManyRequests, errorCode(err), "too many requests")
 	case errors.Is(err, node_error.ErrExamContentNotReady):
-		Error(w, http.StatusServiceUnavailable, "exam content is not ready")
+		ErrorWithCode(w, http.StatusServiceUnavailable, errorCode(err), "exam content is not ready")
 	case errors.Is(err, node_error.ErrExamNotLoaded),
 		errors.Is(err, node_error.ErrExamNotOpen),
 		errors.Is(err, node_error.ErrMaxAttemptsReached),
@@ -62,8 +70,51 @@ func HandleError(w http.ResponseWriter, err error) {
 		errors.Is(err, node_error.ErrItemNotFound),
 		errors.Is(err, node_error.ErrParticipantNotFound),
 		errors.Is(err, node_error.ErrResultNotAvailable):
-		Error(w, http.StatusBadRequest, "request rejected")
+		ErrorWithCode(w, http.StatusBadRequest, errorCode(err), "request rejected")
 	default:
 		Error(w, http.StatusInternalServerError, "internal server error")
+	}
+}
+
+func errorCode(err error) string {
+	switch {
+	case errors.Is(err, node_error.ErrUnauthorized):
+		return "unauthorized"
+	case errors.Is(err, node_error.ErrForbidden):
+		return "forbidden"
+	case errors.Is(err, node_error.ErrInvalidAccessCode):
+		return "invalid_access_code"
+	case errors.Is(err, node_error.ErrTooManyAttempts):
+		return "too_many_login_attempts"
+	case errors.Is(err, node_error.ErrIntegrityFlood):
+		return "integrity_flood"
+	case errors.Is(err, node_error.ErrExamNotLoaded):
+		return "exam_not_loaded"
+	case errors.Is(err, node_error.ErrExamContentNotReady):
+		return "exam_content_not_ready"
+	case errors.Is(err, node_error.ErrExamNotOpen):
+		return "exam_not_open"
+	case errors.Is(err, node_error.ErrMaxAttemptsReached):
+		return "max_attempts_reached"
+	case errors.Is(err, node_error.ErrAttemptNotFound):
+		return "attempt_not_found"
+	case errors.Is(err, node_error.ErrAttemptExpired):
+		return "attempt_expired"
+	case errors.Is(err, node_error.ErrAttemptLocked):
+		return "attempt_locked"
+	case errors.Is(err, node_error.ErrAttemptDeviceMismatch):
+		return "attempt_device_mismatch"
+	case errors.Is(err, node_error.ErrAttemptDeviceIDInvalid):
+		return "attempt_device_id_invalid"
+	case errors.Is(err, node_error.ErrStaleAnswerWrite):
+		return "stale_answer_write"
+	case errors.Is(err, node_error.ErrItemNotFound):
+		return "item_not_found"
+	case errors.Is(err, node_error.ErrParticipantNotFound):
+		return "participant_not_found"
+	case errors.Is(err, node_error.ErrResultNotAvailable):
+		return "result_not_available"
+	default:
+		return ""
 	}
 }

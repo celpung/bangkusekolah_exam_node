@@ -75,7 +75,14 @@ func (s *AttemptService) startAttempt(ctx context.Context, participantID, examID
 			}
 			active.DeviceID = deviceID
 		}
-		return active, nil
+		if now.After(active.DueAt) {
+			if _, _, err := finalizeAttempt(ctx, s.repo, s.txManager, active.ID, true); err != nil {
+				return nil, err
+			}
+			err = node_error.ErrAttemptNotFound
+		} else {
+			return active, nil
+		}
 	}
 	if !errors.Is(err, node_error.ErrAttemptNotFound) {
 		return nil, err
@@ -113,8 +120,22 @@ func (s *AttemptService) startAttempt(ctx context.Context, participantID, examID
 				}
 				active.DeviceID = deviceID
 			}
-			result = active
-			return nil
+			if time.Now().After(active.DueAt) {
+				if _, _, err := finalizeAttemptLocked(txCtx, s.repo, active.ID, true); err != nil {
+					return err
+				}
+				active, err = s.repo.FindActiveAttemptByParticipantAndExam(txCtx, participantID, examID)
+				if err != nil && !errors.Is(err, node_error.ErrAttemptNotFound) {
+					return err
+				}
+				if errors.Is(err, node_error.ErrAttemptNotFound) {
+					active = nil
+				}
+			}
+			if active != nil {
+				result = active
+				return nil
+			}
 		} else if !errors.Is(err, node_error.ErrAttemptNotFound) {
 			return err
 		}
@@ -152,6 +173,13 @@ func (s *AttemptService) GetAttemptState(ctx context.Context, participantID, att
 	}
 	if attempt.ParticipantID != participantID {
 		return nil, node_error.ErrForbidden
+	}
+	if attempt.Status == entity.AttemptInProgress && time.Now().After(attempt.DueAt) {
+		finalized, _, err := finalizeAttempt(ctx, s.repo, s.txManager, attempt.ID, true)
+		if err != nil {
+			return nil, err
+		}
+		attempt = finalized
 	}
 	answers, err := s.repo.ListAnswersByAttempt(ctx, attemptID)
 	if err != nil {
@@ -216,36 +244,7 @@ func (s *AttemptService) SubmitAttempt(ctx context.Context, attemptID, participa
 	if time.Now().After(attempt.DueAt) {
 		return nil, node_error.ErrAttemptExpired
 	}
-	exam, err := s.repo.FindExamByID(ctx, attempt.ExamID)
-	if err != nil {
-		return nil, err
-	}
-	var result *entity.Attempt
-	err = s.txManager.Atomic(ctx, func(txCtx context.Context) error {
-		locked, err := s.repo.FindAttemptByIDForUpdate(txCtx, attemptID)
-		if err != nil {
-			return err
-		}
-		if locked.Status != entity.AttemptInProgress {
-			result = locked
-			return nil
-		}
-		answers, err := s.repo.ListAnswersByAttempt(txCtx, attemptID)
-		if err != nil {
-			return err
-		}
-		total, gradingStatus := finalizeStatus(answers, exam.HasManualItems)
-		now := time.Now().UTC()
-		locked.Score = &total
-		locked.GradingStatus = gradingStatus
-		locked.Status = entity.AttemptSubmitted
-		locked.SubmittedAt = &now
-		if err := s.repo.UpdateAttempt(txCtx, locked); err != nil {
-			return err
-		}
-		result = locked
-		return nil
-	})
+	result, _, err := finalizeAttempt(ctx, s.repo, s.txManager, attemptID, false)
 	if err != nil {
 		return nil, err
 	}

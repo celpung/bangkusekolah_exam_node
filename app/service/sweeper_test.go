@@ -35,6 +35,13 @@ func (f *fakeSweeperRepo) ListAnswersByAttempt(_ context.Context, id string) ([]
 	}
 	return f.answers[id], nil
 }
+func (f *fakeSweeperRepo) FindAttemptByIDForUpdate(_ context.Context, id string) (*entity.Attempt, error) {
+	if a, ok := f.attempts[id]; ok {
+		copied := *a
+		return &copied, nil
+	}
+	return nil, node_error.ErrAttemptNotFound
+}
 func (f *fakeSweeperRepo) UpdateAttempt(_ context.Context, a *entity.Attempt) error {
 	if f.failUpd[a.ID] {
 		return errors.New("update failed")

@@ -38,13 +38,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, node_error.ErrInvalidAccessCode), errors.Is(err, node_error.ErrUnauthorized):
-			delivery_helper.Error(w, http.StatusUnauthorized, "invalid access code")
+			delivery_helper.ErrorWithCode(w, http.StatusUnauthorized, "invalid_access_code", "invalid access code")
 			return
 		case errors.Is(err, node_error.ErrTooManyAttempts), errors.Is(err, node_error.ErrIntegrityFlood):
-			delivery_helper.Error(w, http.StatusTooManyRequests, "too many login attempts")
+			delivery_helper.ErrorWithCode(w, http.StatusTooManyRequests, "too_many_login_attempts", "too many login attempts")
 			return
 		case errors.Is(err, node_error.ErrExamNotLoaded):
-			delivery_helper.Error(w, http.StatusServiceUnavailable, "exam not loaded")
+			delivery_helper.ErrorWithCode(w, http.StatusServiceUnavailable, "exam_not_loaded", "exam not loaded")
 			return
 		default:
 			delivery_helper.HandleError(w, err)

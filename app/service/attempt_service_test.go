@@ -68,6 +68,13 @@ func (f *fakeNodeRepo) FindAttemptByID(_ context.Context, id string) (*entity.At
 	}
 	return nil, node_error.ErrAttemptNotFound
 }
+func (f *fakeNodeRepo) FindAttemptByIDForUpdate(_ context.Context, id string) (*entity.Attempt, error) {
+	if a, ok := f.attempts[id]; ok {
+		copied := *a
+		return &copied, nil
+	}
+	return nil, node_error.ErrAttemptNotFound
+}
 func (f *fakeNodeRepo) ListAnswersByAttempt(_ context.Context, id string) ([]entity.Answer, error) {
 	return f.answers[id], nil
 }
@@ -159,6 +166,91 @@ func TestStartAttemptResumesActiveAttempt(t *testing.T) {
 	}
 	if att.ID != "att-old" || repo.createCalls != 0 {
 		t.Fatalf("resume must return existing attempt without insert: got %q calls %d", att.ID, repo.createCalls)
+	}
+}
+
+func TestStartAttemptAutoSubmitsExpiredActiveAttemptBeforeCreatingNext(t *testing.T) {
+	existing := &entity.Attempt{
+		ID: "att-old", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1",
+		AttemptNo: 1, Status: entity.AttemptInProgress, StartedAt: time.Now().Add(-2 * time.Hour),
+		DueAt: time.Now().Add(-time.Minute), MaxScore: 40,
+	}
+	score := 12.0
+	repo := &fakeNodeRepo{
+		exam: nodeExam(),
+		participants: map[string]*entity.Participant{
+			"part-1": {ID: "part-1", StudentID: "stu-1", ExamID: "exam-1", AttemptCount: 1, LatestAttemptID: &existing.ID},
+		},
+		attempts: map[string]*entity.Attempt{"att-old": existing},
+		answers:  map[string][]entity.Answer{"att-old": {{ID: "ans-1", AttemptID: "att-old", Score: &score, GradingStatus: entity.GradingAutoGraded}}},
+	}
+	repo.exam.MaxAttempts = 2
+	svc := newAttemptService(repo)
+
+	started, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
+	if err != nil {
+		t.Fatalf("StartAttempt: %v", err)
+	}
+	if started.ID != "att-new" || started.AttemptNo != 2 || started.Status != entity.AttemptInProgress {
+		t.Fatalf("new attempt = %+v", started)
+	}
+	old := repo.attempts["att-old"]
+	if old.Status != entity.AttemptAutoSubmitted || old.AutoSubmittedAt == nil {
+		t.Fatalf("expired attempt was not auto-submitted: %+v", old)
+	}
+	if old.Score == nil || *old.Score != score {
+		t.Fatalf("expired attempt score = %v, want %v", old.Score, score)
+	}
+	if repo.participants["part-1"].AttemptCount != 2 {
+		t.Fatalf("attempt count = %d, want 2", repo.participants["part-1"].AttemptCount)
+	}
+}
+
+func TestStartAttemptAutoSubmitsExpiredActiveBeforeMaxAttemptsError(t *testing.T) {
+	existing := &entity.Attempt{
+		ID: "att-old", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1",
+		AttemptNo: 1, Status: entity.AttemptInProgress, StartedAt: time.Now().Add(-2 * time.Hour),
+		DueAt: time.Now().Add(-time.Minute), MaxScore: 40,
+	}
+	repo := &fakeNodeRepo{
+		exam: nodeExam(),
+		participants: map[string]*entity.Participant{
+			"part-1": {ID: "part-1", StudentID: "stu-1", ExamID: "exam-1", AttemptCount: 1, LatestAttemptID: &existing.ID},
+		},
+		attempts: map[string]*entity.Attempt{"att-old": existing},
+		answers:  map[string][]entity.Answer{},
+	}
+	svc := newAttemptService(repo)
+
+	_, err := svc.StartAttempt(context.Background(), "part-1", "exam-1")
+	if !errors.Is(err, node_error.ErrMaxAttemptsReached) {
+		t.Fatalf("error = %v, want max attempts", err)
+	}
+	if repo.attempts["att-old"].Status != entity.AttemptAutoSubmitted {
+		t.Fatalf("expired attempt status = %q, want auto_submitted", repo.attempts["att-old"].Status)
+	}
+}
+
+func TestGetAttemptStateAutoSubmitsExpiredAttempt(t *testing.T) {
+	existing := &entity.Attempt{
+		ID: "att-old", ParticipantID: "part-1", ExamID: "exam-1", StudentID: "stu-1",
+		AttemptNo: 1, Status: entity.AttemptInProgress, StartedAt: time.Now().Add(-2 * time.Hour),
+		DueAt: time.Now().Add(-time.Minute), MaxScore: 40,
+	}
+	repo := &fakeNodeRepo{
+		exam:         nodeExam(),
+		participants: map[string]*entity.Participant{"part-1": nodeParticipant()},
+		attempts:     map[string]*entity.Attempt{"att-old": existing},
+		answers:      map[string][]entity.Answer{},
+	}
+	svc := newAttemptService(repo)
+
+	state, err := svc.GetAttemptState(context.Background(), "part-1", "att-old")
+	if err != nil {
+		t.Fatalf("GetAttemptState: %v", err)
+	}
+	if state.Attempt.Status != entity.AttemptAutoSubmitted || state.Attempt.AutoSubmittedAt == nil {
+		t.Fatalf("state attempt = %+v, want auto_submitted", state.Attempt)
 	}
 }
 
