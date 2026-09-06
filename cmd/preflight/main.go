@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -140,14 +139,6 @@ func main() {
 func fail(format string, args ...interface{}) {
 	fmt.Printf("FAIL: "+format+"\n", args...)
 	os.Exit(1)
-}
-
-func diskFree(path string) uint64 {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0
-	}
-	return st.Bavail * uint64(st.Bsize)
 }
 
 // clockOffset compares local time against the Date header of a HEAD request
