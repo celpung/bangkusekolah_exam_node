@@ -53,6 +53,16 @@ func main() {
 	harvestClient := nodecentral.NewHarvestClient(cfg)
 	fenceClient := nodecentral.NewFenceClient(cfg.CentralBaseURL, cfg.CentralNodeToken)
 	harvestSvc := service.NewHarvestService(repo, harvestClient)
+	var resetWorker *service.AttemptResetWorker
+	resetRepo, resetRepoConfigured := repo.(outbound_repository.AttemptResetRepository)
+	resetOperations, resetOperationsConfigured := repo.(outbound_repository.AttemptResetOperationRepository)
+	if resetRepoConfigured && resetOperationsConfigured {
+		resetSvc := service.NewAttemptResetService(resetRepo, resetOperations, txManager)
+		resetClient := nodecentral.NewAttemptResetClient(cfg)
+		resetWorker = service.NewAttemptResetWorker(resetClient, resetSvc)
+	} else {
+		log.Printf("attempt reset worker disabled: reset persistence capability is unavailable")
+	}
 	sweeperSvc := service.NewSweeperService(repo, txManager)
 	harvestSvc.SetSweeper(sweeperSvc)
 	authSvc := service.NewAuthServiceWithLimits(repo, issuer, cfg.JWTTTL, cfg.LoginRateLimit, cfg.LoginRateWindow)
@@ -63,6 +73,9 @@ func main() {
 	// Any rebuild failure aborts startup (the executable's decision).
 	if err := service.RehydrateAllCaches(context.Background(), repo, contentSvc); err != nil {
 		log.Fatalf("startup cache rehydrate: %v", err)
+	}
+	if resetWorker != nil {
+		go resetWorker.Start(context.Background(), cfg.AttemptResetPollInterval)
 	}
 
 	r := chi.NewRouter()

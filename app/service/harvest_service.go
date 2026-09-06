@@ -190,7 +190,8 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 		payload := inbound.ExamNodeAttemptPayload{
 			ID: att.ID, ParticipantID: att.ParticipantID, StudentID: att.StudentID,
 			AttemptNo: att.AttemptNo, Status: entity.AttemptStatus(att.Status),
-			StartedAt: att.StartedAt, DueAt: att.DueAt,
+			ResetGeneration: att.ResetGeneration,
+			StartedAt:       att.StartedAt, DueAt: att.DueAt,
 			SubmittedAt: att.SubmittedAt, AutoSubmittedAt: att.AutoSubmittedAt,
 		}
 		for _, ans := range answers {
@@ -264,7 +265,22 @@ func (s *HarvestService) drainDeployment(ctx context.Context, deploymentID strin
 		delete(sent, id)
 	}
 	if len(accepted) > 0 {
-		marked, err := s.repo.MarkAttemptsHarvested(ctx, accepted, now)
+		generations := make(map[string]int64, len(accepted))
+		for _, id := range accepted {
+			for _, payload := range batch.Attempts {
+				if payload.ID == id {
+					generations[id] = payload.ResetGeneration
+					break
+				}
+			}
+		}
+		var marked int
+		var err error
+		if generationMarker, ok := s.repo.(outbound_repository.GenerationHarvestMarker); ok {
+			marked, err = generationMarker.MarkAttemptsHarvestedForGeneration(ctx, generations, now)
+		} else {
+			marked, err = s.repo.MarkAttemptsHarvested(ctx, accepted, now)
+		}
 		if err != nil {
 			return 0, err
 		}

@@ -194,6 +194,34 @@ func (r *nodeRepository) UpdateAttempt(ctx context.Context, a *entity.Attempt) e
 	return nil
 }
 
+// ResetAttempt is the only repository write that reopens a finished attempt.
+// Its explicit column list is intentional: StartedAt, DueAt, DeviceID,
+// attempt number, and every answer row remain untouched.
+func (r *nodeRepository) ResetAttempt(ctx context.Context, a *entity.Attempt, expectedStatus entity.AttemptStatus, expectedGeneration int64) error {
+	if a == nil {
+		return node_error.ErrAttemptResetConflict
+	}
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.Attempt{}).
+		Where("id = ? AND status = ? AND reset_generation = ?", a.ID, string(expectedStatus), expectedGeneration).
+		Updates(map[string]interface{}{
+			"status":            string(entity.AttemptInProgress),
+			"submitted_at":      nil,
+			"auto_submitted_at": nil,
+			"score":             nil,
+			"grading_status":    string(entity.GradingPending),
+			"reset_generation":  a.ResetGeneration,
+			"harvested_at":      nil,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("reset attempt: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return node_error.ErrAttemptResetConflict
+	}
+	return nil
+}
+
 func (r *nodeRepository) BindAttemptDevice(ctx context.Context, attemptID, deviceID string) error {
 	db := helper.GetDB(ctx, r.db)
 	result := db.Model(&model.Attempt{}).
@@ -256,6 +284,18 @@ func (r *nodeRepository) FindExamByID(ctx context.Context, examID string) (*enti
 			return nil, node_error.ErrExamNotLoaded
 		}
 		return nil, fmt.Errorf("find exam by id: %w", err)
+	}
+	return mapper.ToExamEntity(&m), nil
+}
+
+func (r *nodeRepository) FindExamByIDForUpdate(ctx context.Context, examID string) (*entity.Exam, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.Exam
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", examID).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, node_error.ErrExamNotLoaded
+		}
+		return nil, fmt.Errorf("find exam by id for update: %w", err)
 	}
 	return mapper.ToExamEntity(&m), nil
 }
@@ -349,6 +389,30 @@ func (r *nodeRepository) MarkAttemptsHarvested(ctx context.Context, ids []string
 	return int(res.RowsAffected), nil
 }
 
+func (r *nodeRepository) MarkAttemptsHarvestedForGeneration(ctx context.Context, generations map[string]int64, at time.Time) (int, error) {
+	if len(generations) == 0 {
+		return 0, nil
+	}
+	db := helper.GetDB(ctx, r.db)
+	query := "id = ? AND reset_generation = ?"
+	args := make([]interface{}, 0, len(generations)*2)
+	first := true
+	for id, generation := range generations {
+		if !first {
+			query += " OR id = ? AND reset_generation = ?"
+		}
+		first = false
+		args = append(args, id, generation)
+	}
+	result := db.Model(&model.Attempt{}).
+		Where("("+query+") AND status IN (?,?) AND harvested_at IS NULL", append(args, string(entity.AttemptSubmitted), string(entity.AttemptAutoSubmitted))...).
+		Update("harvested_at", at)
+	if result.Error != nil {
+		return 0, fmt.Errorf("mark attempts harvested for generation: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
+}
+
 func (r *nodeRepository) LogHarvestFailure(ctx context.Context, attemptID, deploymentID string, attemptsCount int, errMsg string) error {
 	db := helper.GetDB(ctx, r.db)
 	msg := errMsg
@@ -372,6 +436,65 @@ func (r *nodeRepository) ListIntegrityEventsByAttempt(ctx context.Context, attem
 		entities[i] = *mapper.ToIntegrityEventEntity(&models[i])
 	}
 	return entities, nil
+}
+
+func (r *nodeRepository) FindAttemptResetOperationForUpdate(ctx context.Context, requestID string) (*entity.AttemptResetOperation, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.AttemptResetOperation
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrAttemptResetOperationNotFound
+		}
+		return nil, fmt.Errorf("find attempt reset operation: %w", err)
+	}
+	return mapper.ToAttemptResetOperationEntity(&m), nil
+}
+
+func (r *nodeRepository) CreateAttemptResetOperation(ctx context.Context, operation *entity.AttemptResetOperation) error {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToAttemptResetOperationModel(operation)
+	if m == nil {
+		return fmt.Errorf("create attempt reset operation: nil operation")
+	}
+	if err := db.Create(m).Error; err != nil {
+		return fmt.Errorf("create attempt reset operation: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeRepository) UpdateAttemptResetOperation(ctx context.Context, operation *entity.AttemptResetOperation) error {
+	if operation == nil {
+		return fmt.Errorf("update attempt reset operation: nil operation")
+	}
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.AttemptResetOperation{}).Where("request_id = ?", operation.RequestID).Updates(map[string]interface{}{
+		"status":            string(operation.Status),
+		"code":              operation.Code,
+		"message":           operation.Message,
+		"attempt_id":        operation.AttemptID,
+		"target_generation": operation.TargetGeneration,
+		"attempt_no":        operation.AttemptNo,
+		"attempt_status":    string(operation.AttemptStatus),
+		"started_at":        nullableTime(operation.StartedAt),
+		"due_at":            nullableTime(operation.DueAt),
+		"submitted_at":      operation.SubmittedAt,
+		"auto_submitted_at": operation.AutoSubmittedAt,
+		"updated_at":        operation.UpdatedAt,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("update attempt reset operation: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return node_error.ErrAttemptResetOperationNotFound
+	}
+	return nil
+}
+
+func nullableTime(value time.Time) interface{} {
+	if value.IsZero() {
+		return nil
+	}
+	return value.UTC()
 }
 
 // ReplaceBundle swaps one exam's bundle: delete the exam's old rows, then

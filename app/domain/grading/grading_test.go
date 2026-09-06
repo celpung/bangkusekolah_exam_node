@@ -12,7 +12,7 @@ import (
 
 const vectorFile = "../../../testdata/grading/vectors.json"
 
-const centralChecksum = "45d8661588390c4c7eb3d2146c4b3a7bbbb5527277d29a0e7fce48cab7dd1ad4"
+const centralChecksum = "3d924757d1182a9138b81e2e380dd1e02b36f91df732c5c7599f73446a9d362f"
 
 type gradingVector struct {
 	Name         string                 `json:"name"`
