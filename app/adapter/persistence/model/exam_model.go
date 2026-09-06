@@ -73,6 +73,7 @@ type Attempt struct {
 	Score           *float64   `gorm:"type:decimal(8,2)"`
 	MaxScore        float64    `gorm:"type:decimal(8,2);not null"`
 	GradingStatus   string     `gorm:"type:varchar(30);not null"`
+	ResetGeneration int64      `gorm:"not null;default:0;index"`
 	HarvestedAt     *time.Time `gorm:"type:datetime;index"`
 }
 

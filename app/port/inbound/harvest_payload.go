@@ -33,6 +33,7 @@ type ExamNodeAttemptPayload struct {
 	StudentID       string                          `json:"student_id"`
 	AttemptNo       int                             `json:"attempt_no"`
 	Status          entity.AttemptStatus            `json:"status"`
+	ResetGeneration int64                           `json:"reset_generation"`
 	StartedAt       time.Time                       `json:"started_at"`
 	DueAt           time.Time                       `json:"due_at"`
 	SubmittedAt     *time.Time                      `json:"submitted_at"`

@@ -85,6 +85,28 @@ scripts/maintenance/run-tool.sh examharvest --force
 - Harvest worker drains every 5m. Monitor: `docker compose logs -f examnode | grep harvest`.
 - Sweeper finalizes abandoned attempts every 60s. Monitor: `grep sweeper`.
 
+## Reset a student's Node attempt
+
+An authorized Central operator (staff with Exam WRITE permission, Headmaster,
+Admin, or SuperAdmin) starts the reset with the Central preview and reset APIs.
+The Node announces its reset protocol capability at startup, then polls pending
+metadata-only commands every `ATTEMPT_RESET_POLL_INTERVAL` (default: 5s).
+
+The reset reopens the same attempt. It preserves the attempt ID and number,
+attempt count, every saved answer and answer ID, device binding, integrity
+history, `StartedAt`, and the original `DueAt`. It only changes the lifecycle
+state to `in_progress`, clears submission/aggregate grading fields, clears the
+harvest marker, and advances the reset generation. The student receives only
+the time remaining before the original `DueAt`; no new duration is calculated.
+
+Central reports `pending` while the Node is offline or the acknowledgement has
+not arrived. Do not seal a deployment while a reset is pending or while the
+reopened generation has not finished and been harvested. A reset that reaches
+its original deadline is rejected and never extends the exam. The current
+student API does not revoke an already-delayed submit request from before the
+reset; this limitation is intentional and does not change the stable student
+flow.
+
 ## If the node is unreachable mid-exam
 
 1. **Do not destroy the box.** The 5-minute harvest means at most 5 minutes of submitted work is on the node but not yet in central. Binlog may still be recoverable.

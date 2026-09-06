@@ -118,11 +118,55 @@ type Attempt struct {
 	Score           *float64
 	MaxScore        float64
 	GradingStatus   GradingStatus
+	ResetGeneration int64
 	HarvestedAt     *time.Time
 }
 
 func (a *Attempt) IsFinished() bool {
 	return a.Status == AttemptSubmitted || a.Status == AttemptAutoSubmitted || a.Status == AttemptGraded
+}
+
+type AttemptResetOperationStatus string
+
+const (
+	AttemptResetPending           AttemptResetOperationStatus = "pending"
+	AttemptResetApplied           AttemptResetOperationStatus = "applied"
+	AttemptResetRejected          AttemptResetOperationStatus = "rejected"
+	AttemptResetExpired           AttemptResetOperationStatus = "expired"
+	AttemptResetAlreadyInProgress AttemptResetOperationStatus = "already_in_progress"
+)
+
+// AttemptResetOperation is the durable Node-side receipt for one Central
+// command. It intentionally contains metadata only; answers and integrity
+// payloads are never copied into reset-operation records.
+type AttemptResetOperation struct {
+	RequestID               string
+	Operation               string
+	CommandHash             string
+	Status                  AttemptResetOperationStatus
+	Code                    string
+	Message                 string
+	NodeID                  string
+	DeploymentID            string
+	ExamID                  string
+	StudentID               string
+	ParticipantID           string
+	AttemptID               string
+	ExpectedGeneration      int64
+	TargetGeneration        int64
+	ExpectedStatus          AttemptStatus
+	ExpectedDueAt           time.Time
+	ExpectedSubmittedAt     *time.Time
+	ExpectedAutoSubmittedAt *time.Time
+	Deadline                time.Time
+	AttemptNo               int
+	AttemptStatus           AttemptStatus
+	StartedAt               time.Time
+	DueAt                   time.Time
+	SubmittedAt             *time.Time
+	AutoSubmittedAt         *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 type Answer struct {
