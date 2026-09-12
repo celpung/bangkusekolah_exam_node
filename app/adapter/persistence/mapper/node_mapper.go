@@ -17,7 +17,7 @@ func ToExamEntity(m *model.Exam) *entity.Exam {
 		StartsAt: m.StartsAt.UTC(), EndsAt: m.EndsAt.UTC(), DurationMinutes: m.DurationMinutes, MaxAttempts: m.MaxAttempts,
 		ShuffleQuestions: m.ShuffleQuestions, ShuffleOptions: m.ShuffleOptions, ShowResultImmediately: m.ShowResultImmediately,
 		PassingScore: m.PassingScore, ResultSelectionPolicy: m.ResultSelectionPolicy, MaxScore: m.MaxScore,
-		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, FencedAt: utcTimePtr(m.FencedAt), LoadedAt: m.LoadedAt.UTC(),
+		HasManualItems: m.HasManualItems, AccessCodePrefix: m.AccessCodePrefix, BundleChecksum: m.BundleChecksum, ContentHash: m.ContentHash, RosterRevision: m.RosterRevision, FencedAt: utcTimePtr(m.FencedAt), LoadedAt: m.LoadedAt.UTC(),
 	}
 }
 
@@ -31,9 +31,9 @@ func ToExamModel(e *entity.Exam) *model.Exam {
 		ShuffleQuestions: e.ShuffleQuestions, ShuffleOptions: e.ShuffleOptions, ShowResultImmediately: e.ShowResultImmediately,
 		PassingScore: e.PassingScore, ResultSelectionPolicy: e.ResultSelectionPolicy, MaxScore: e.MaxScore,
 		HasManualItems: e.HasManualItems, AccessCodePrefix: e.AccessCodePrefix, BundleChecksum: e.BundleChecksum,
-		ContentHash: e.ContentHash,
-		FencedAt:    utcTimePtr(e.FencedAt),
-		LoadedAt:    time.Now().UTC(),
+		ContentHash: e.ContentHash, RosterRevision: e.RosterRevision,
+		FencedAt: utcTimePtr(e.FencedAt),
+		LoadedAt: time.Now().UTC(),
 	}
 }
 
@@ -49,14 +49,14 @@ func ToParticipantEntity(m *model.Participant) *entity.Participant {
 	if m == nil {
 		return nil
 	}
-	return &entity.Participant{ID: m.ID, ExamID: m.ExamID, StudentID: m.StudentID, StudentName: m.StudentName, AccessCode: m.AccessCode, AttemptCount: m.AttemptCount, LatestAttemptID: m.LatestAttemptID}
+	return &entity.Participant{ID: m.ID, ExamID: m.ExamID, StudentID: m.StudentID, StudentName: m.StudentName, AccessCode: m.AccessCode, RosterRevision: m.RosterRevision, AttemptCount: m.AttemptCount, LatestAttemptID: m.LatestAttemptID}
 }
 
 func ToParticipantModel(e *entity.Participant) *model.Participant {
 	if e == nil {
 		return nil
 	}
-	return &model.Participant{ID: e.ID, ExamID: e.ExamID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode}
+	return &model.Participant{ID: e.ID, ExamID: e.ExamID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode, RosterRevision: e.RosterRevision}
 }
 
 func ToAttemptEntity(m *model.Attempt) *entity.Attempt {
