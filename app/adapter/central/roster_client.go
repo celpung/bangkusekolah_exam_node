@@ -73,7 +73,20 @@ func (c *RosterClient) Acknowledge(ctx context.Context, outcome inbound.RosterOu
 		return errRosterClientInvalidRequest
 	}
 	path := "/api/v1/exam-nodes/roster-events/" + url.PathEscape(outcome.EventID) + "/ack"
-	if err := c.request(ctx, http.MethodPost, path, outcome, nil); err != nil {
+	// The event ID is carried in the URL. Keep it out of the request body so
+	// the central decoder's strict schema accepts the acknowledgement payload.
+	body := struct {
+		DeploymentID string `json:"deployment_id"`
+		Revision     int64  `json:"revision"`
+		Status       string `json:"status"`
+		Code         string `json:"code"`
+	}{
+		DeploymentID: outcome.DeploymentID,
+		Revision:     outcome.Revision,
+		Status:       outcome.Status,
+		Code:         outcome.Code,
+	}
+	if err := c.request(ctx, http.MethodPost, path, body, nil); err != nil {
 		return fmt.Errorf("acknowledge roster event %s: %w", outcome.EventID, err)
 	}
 	return nil
@@ -120,6 +133,12 @@ func (c *RosterClient) request(ctx context.Context, method, path string, body in
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if readErr == nil {
+			if detail := centralErrorDetail(body); detail != "" {
+				return fmt.Errorf("central request returned status %d: %s", resp.StatusCode, detail)
+			}
+		}
 		return fmt.Errorf("central request returned status %d", resp.StatusCode)
 	}
 	if target == nil {
@@ -146,6 +165,28 @@ func (c *RosterClient) request(ctx context.Context, method, path string, body in
 		return fmt.Errorf("decode central response data: %w", err)
 	}
 	return nil
+}
+
+func centralErrorDetail(body []byte) string {
+	var envelope struct {
+		Message string `json:"message"`
+		Error   string `json:"error"`
+		Code    string `json:"code"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return ""
+	}
+	detail := strings.TrimSpace(envelope.Message)
+	if detail == "" {
+		detail = strings.TrimSpace(envelope.Error)
+	}
+	if detail == "" {
+		return strings.TrimSpace(envelope.Code)
+	}
+	if code := strings.TrimSpace(envelope.Code); code != "" {
+		return detail + " (" + code + ")"
+	}
+	return detail
 }
 
 var _ interface {

@@ -17,7 +17,12 @@ import (
 
 func TestRosterClientUsesAuthenticatedPullReplayAndAckContracts(t *testing.T) {
 	var paths []string
-	var ack inbound.RosterOutcome
+	var ack struct {
+		DeploymentID string `json:"deployment_id"`
+		Revision     int64  `json:"revision"`
+		Status       string `json:"status"`
+		Code         string `json:"code"`
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
@@ -26,7 +31,9 @@ func TestRosterClientUsesAuthenticatedPullReplayAndAckContracts(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/ack") {
-			if err := json.NewDecoder(r.Body).Decode(&ack); err != nil {
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&ack); err != nil {
 				t.Fatalf("decode ack: %v", err)
 			}
 			_, _ = w.Write([]byte(`{"success":true}`))
@@ -54,7 +61,7 @@ func TestRosterClientUsesAuthenticatedPullReplayAndAckContracts(t *testing.T) {
 	if err := client.AnnounceCapabilities(context.Background()); err != nil {
 		t.Fatalf("AnnounceCapabilities: %v", err)
 	}
-	if ack.EventID != "event-1" || ack.Status != string(entity.RosterEventApplied) {
+	if ack.DeploymentID != "deployment-1" || ack.Revision != 1 || ack.Status != string(entity.RosterEventApplied) || ack.Code != "" {
 		t.Fatalf("ack = %+v", ack)
 	}
 	if len(paths) != 4 {
@@ -90,6 +97,21 @@ func TestRosterClientRejectsHTTPAndMalformedResponses(t *testing.T) {
 				t.Fatal("PullPending should fail")
 			}
 		})
+	}
+}
+
+func TestRosterClientIncludesCentralErrorDetails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid roster acknowledgement","code":"roster_ack_conflict"}`))
+	}))
+	defer server.Close()
+
+	client := newRosterClient(server.URL, "node-token", server.Client())
+	_, err := client.PullPending(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "roster_ack_conflict") || !strings.Contains(err.Error(), "invalid roster acknowledgement") {
+		t.Fatalf("PullPending error = %v, want central error details", err)
 	}
 }
 
