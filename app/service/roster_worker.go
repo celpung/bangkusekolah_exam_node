@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/inbound"
 	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
@@ -96,9 +97,11 @@ func (w *RosterWorker) processDeployment(ctx context.Context, deploymentID strin
 			}
 			continue
 		}
-		if ackErr := w.client.Acknowledge(ctx, *outcome); ackErr != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("acknowledge roster event %s: %w", event.EventID, ackErr)
+		if shouldAcknowledgeRosterEvent(event) {
+			if ackErr := w.client.Acknowledge(ctx, *outcome); ackErr != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("acknowledge roster event %s: %w", event.EventID, ackErr)
+				}
 			}
 		}
 		processed[event.EventID] = true
@@ -132,8 +135,10 @@ func (w *RosterWorker) replayDeployment(ctx context.Context, deploymentID string
 				if outcome == nil {
 					return fmt.Errorf("apply replay roster event %s returned no outcome", event.EventID)
 				}
-				if err := w.client.Acknowledge(ctx, *outcome); err != nil {
-					return fmt.Errorf("acknowledge replay roster event %s: %w", event.EventID, err)
+				if shouldAcknowledgeRosterEvent(event) {
+					if err := w.client.Acknowledge(ctx, *outcome); err != nil {
+						return fmt.Errorf("acknowledge replay roster event %s: %w", event.EventID, err)
+					}
 				}
 				processed[event.EventID] = true
 			}
@@ -146,6 +151,10 @@ func (w *RosterWorker) replayDeployment(ctx context.Context, deploymentID string
 		}
 		afterRevision = lastRevision
 	}
+}
+
+func shouldAcknowledgeRosterEvent(event inbound.RosterEvent) bool {
+	return event.Status == string(entity.RosterEventPending) || event.Status == string(entity.RosterEventApplied)
 }
 
 func (w *RosterWorker) Start(ctx context.Context, interval time.Duration) {

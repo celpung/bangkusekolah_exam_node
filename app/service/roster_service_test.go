@@ -211,6 +211,48 @@ func TestRosterServiceApplyRejectsAccessCodeConflictAndRollsBackReceipt(t *testi
 	}
 }
 
+func TestRosterServiceApplyAdvancesRevisionForRejectedEvent(t *testing.T) {
+	repo := newRosterRepositoryFixture()
+	svc := newRosterServiceForTest(repo)
+
+	rejected := rosterEvent()
+	rejected.AccessCode = "ABCDEF-OLD123"
+	if outcome, err := svc.Apply(context.Background(), rejected); err != nil || outcome == nil || outcome.Status != string(entity.RosterEventRejected) {
+		t.Fatalf("rejected event outcome/error = %+v/%v, want rejected", outcome, err)
+	}
+
+	if repo.exam.RosterRevision != rejected.Revision {
+		t.Fatalf("roster revision after rejected event = %d, want %d", repo.exam.RosterRevision, rejected.Revision)
+	}
+
+	applied := rosterEvent()
+	applied.EventID = "event-2"
+	applied.ParticipantID = "participant-3"
+	applied.StudentID = "student-3"
+	applied.StudentName = "Student Three"
+	applied.AccessCode = "ABCDEF-NEW123"
+	applied.Revision = 2
+	if outcome, err := svc.Apply(context.Background(), applied); err != nil || outcome == nil || outcome.Status != string(entity.RosterEventApplied) {
+		t.Fatalf("applied event after rejection outcome/error = %+v/%v, want applied", outcome, err)
+	}
+}
+
+func TestRosterServiceApplyRestoresAppliedHistoryAfterDeadline(t *testing.T) {
+	repo := newRosterRepositoryFixture()
+	repo.exam.EndsAt = time.Now().Add(-time.Minute)
+	event := rosterEvent()
+	event.Deadline = time.Now().Add(-time.Minute)
+	event.Status = string(entity.RosterEventApplied)
+
+	outcome, err := newRosterServiceForTest(repo).Apply(context.Background(), event)
+	if err != nil || outcome == nil || outcome.Status != string(entity.RosterEventApplied) {
+		t.Fatalf("applied historical event outcome/error = %+v/%v, want applied", outcome, err)
+	}
+	if repo.exam.RosterRevision != event.Revision || len(repo.participants) != 2 {
+		t.Fatalf("restored roster revision/participants = %d/%d, want %d/2", repo.exam.RosterRevision, len(repo.participants), event.Revision)
+	}
+}
+
 func stringPtr(value string) *string { return &value }
 
 var _ outbound.RosterRepository = (*fakeRosterRepository)(nil)

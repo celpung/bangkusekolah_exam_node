@@ -58,21 +58,30 @@ func (s *RosterService) Apply(ctx context.Context, event inbound.RosterEvent) (*
 			outcome, err = s.rejectEvent(txCtx, event, payloadHash, node_error.ErrRosterDeploymentMismatch.Error())
 			return err
 		}
-		if exam.FencedAt != nil {
-			outcome, err = s.rejectEvent(txCtx, event, payloadHash, node_error.ErrRosterExamFenced.Error())
-			return err
-		}
-		now := time.Now().UTC()
-		if !now.Before(event.Deadline) || !now.Before(exam.EndsAt) {
-			outcome, err = s.rejectEvent(txCtx, event, payloadHash, node_error.ErrRosterExpired.Error())
-			return err
-		}
 		if event.Revision != exam.RosterRevision+1 {
 			return node_error.ErrRosterRevisionGap
 		}
 		if event.Status == string(entity.RosterEventCancelled) || event.Status == string(entity.RosterEventRejected) || event.Status == string(entity.RosterEventExpired) {
-			outcome, err = s.rejectEvent(txCtx, event, payloadHash, event.Status)
+			code := event.OutcomeCode
+			if code == "" {
+				code = event.Status
+			}
+			outcome, err = s.rejectAndAdvance(txCtx, event, payloadHash, code, exam)
 			return err
+		}
+		now := time.Now().UTC()
+		if event.Status == string(entity.RosterEventPending) {
+			if exam.FencedAt != nil {
+				outcome, err = s.rejectAndAdvance(txCtx, event, payloadHash, node_error.ErrRosterExamFenced.Error(), exam)
+				return err
+			}
+			if !now.Before(event.Deadline) || !now.Before(exam.EndsAt) {
+				outcome, err = s.rejectAndAdvance(txCtx, event, payloadHash, node_error.ErrRosterExpired.Error(), exam)
+				return err
+			}
+		}
+		if event.Status != string(entity.RosterEventPending) && event.Status != string(entity.RosterEventApplied) {
+			return node_error.ErrRosterInvalid
 		}
 
 		participant := &entity.Participant{
@@ -82,13 +91,13 @@ func (s *RosterService) Apply(ctx context.Context, event inbound.RosterEvent) (*
 		existing, inserted, err := s.repo.InsertParticipantIfAbsent(txCtx, participant)
 		if err != nil {
 			if errors.Is(err, node_error.ErrRosterCodeConflict) {
-				outcome, err = s.rejectEvent(txCtx, event, payloadHash, node_error.ErrRosterCodeConflict.Error())
+				outcome, err = s.rejectAndAdvance(txCtx, event, payloadHash, node_error.ErrRosterCodeConflict.Error(), exam)
 				return err
 			}
 			return err
 		}
 		if !inserted && (existing.ID != event.ParticipantID || existing.StudentID != event.StudentID || existing.AccessCode != event.AccessCode || existing.StudentName != event.StudentName) {
-			outcome, err = s.rejectEvent(txCtx, event, payloadHash, "participant_identity_conflict")
+			outcome, err = s.rejectAndAdvance(txCtx, event, payloadHash, "participant_identity_conflict", exam)
 			return err
 		}
 		items, err := s.repo.ListItemsByExamID(txCtx, event.ExamID)
@@ -122,6 +131,13 @@ func (s *RosterService) Apply(ctx context.Context, event inbound.RosterEvent) (*
 		return nil, err
 	}
 	return outcome, nil
+}
+
+func (s *RosterService) rejectAndAdvance(ctx context.Context, event inbound.RosterEvent, payloadHash, code string, exam *entity.Exam) (*inbound.RosterOutcome, error) {
+	if err := s.repo.UpdateExamRosterState(ctx, exam.ID, event.Revision, exam.ContentHash); err != nil {
+		return nil, err
+	}
+	return s.rejectEvent(ctx, event, payloadHash, code)
 }
 
 func (s *RosterService) rejectEvent(ctx context.Context, event inbound.RosterEvent, payloadHash, code string) (*inbound.RosterOutcome, error) {

@@ -102,6 +102,24 @@ func TestRosterWorkerReplaysRevisionGapAndContinuesOtherDeployments(t *testing.T
 	}
 }
 
+func TestRosterWorkerDoesNotACKTerminalHistoryEvents(t *testing.T) {
+	terminal := workerRosterEvent("event-a1", "deployment-a", 1)
+	terminal.Status = string(entity.RosterEventCancelled)
+	client := &rosterWorkerClientStub{
+		pending: []inbound.RosterEvent{workerRosterEvent("event-a2", "deployment-a", 2)},
+		replay:  []inbound.RosterEvent{terminal, workerRosterEvent("event-a2", "deployment-a", 2)},
+	}
+	processor := &rosterWorkerProcessorStub{gapOnce: true}
+	worker := NewRosterWorker(client, processor)
+
+	if err := worker.PollOnce(context.Background()); err != nil {
+		t.Fatalf("poll should recover terminal history and continue: %v", err)
+	}
+	if len(client.outcomes) != 1 || client.outcomes[0].EventID != "event-a2" {
+		t.Fatalf("acknowledged outcomes = %+v, want only event-a2", client.outcomes)
+	}
+}
+
 func TestRosterWorkerCapabilityFailureDoesNotBlockPolling(t *testing.T) {
 	client := &rosterWorkerClientStub{announceError: errors.New("old central")}
 	processor := &rosterWorkerProcessorStub{}
