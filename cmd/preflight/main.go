@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -33,8 +32,10 @@ const (
 // structurally only.
 type deploymentExpectation struct {
 	Exams map[string]struct {
-		ItemCount        int `json:"item_count"`
-		ParticipantCount int `json:"participant_count"`
+		ItemCount             int    `json:"item_count"`
+		ParticipantCount      int    `json:"participant_count"`
+		TotalParticipantCount *int   `json:"total_participant_count,omitempty"`
+		RosterRevision        *int64 `json:"roster_revision,omitempty"`
 	} `json:"exams"`
 }
 
@@ -94,7 +95,15 @@ func main() {
 		// Full BundleService.Preflight when deployment expectations exist
 		// (counts + content hash); structural + content-hash checks otherwise.
 		if expect, ok := expects.Exams[exam.ID]; ok {
-			if err := bundleSvc.Preflight(ctx, exam.ID, expect.ItemCount, expect.ParticipantCount); err != nil {
+			totalParticipantCount := expect.ParticipantCount
+			if expect.TotalParticipantCount != nil {
+				totalParticipantCount = *expect.TotalParticipantCount
+			}
+			rosterRevision := int64(-1)
+			if expect.RosterRevision != nil {
+				rosterRevision = *expect.RosterRevision
+			}
+			if err := bundleSvc.PreflightRoster(ctx, exam.ID, expect.ItemCount, expect.ParticipantCount, totalParticipantCount, rosterRevision); err != nil {
 				fail("preflight exam %s vs deployment: %v", exam.ID, err)
 			}
 		} else {
@@ -140,14 +149,6 @@ func main() {
 func fail(format string, args ...interface{}) {
 	fmt.Printf("FAIL: "+format+"\n", args...)
 	os.Exit(1)
-}
-
-func diskFree(path string) uint64 {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0
-	}
-	return st.Bavail * uint64(st.Bsize)
 }
 
 // clockOffset compares local time against the Date header of a HEAD request

@@ -13,6 +13,7 @@ import (
 	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 	node_error "github.com/celpung/bangkusekolah_exam_node/app/domain/error"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -47,6 +48,86 @@ func (r *nodeRepository) FindParticipantByIDForUpdate(ctx context.Context, id st
 		return nil, err
 	}
 	return mapper.ToParticipantEntity(&m), nil
+}
+
+func (r *nodeRepository) FindReceipt(ctx context.Context, eventID string) (*entity.RosterEventReceipt, error) {
+	db := helper.GetDB(ctx, r.db)
+	var m model.RosterEventReceipt
+	if err := db.Where("event_id = ?", eventID).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, node_error.ErrRosterReceiptNotFound
+		}
+		return nil, fmt.Errorf("find roster receipt: %w", err)
+	}
+	return mapper.ToRosterEventReceiptEntity(&m), nil
+}
+
+func (r *nodeRepository) InsertReceipt(ctx context.Context, receipt *entity.RosterEventReceipt) error {
+	db := helper.GetDB(ctx, r.db)
+	m := mapper.ToRosterEventReceiptModel(receipt)
+	if m == nil {
+		return node_error.ErrRosterInvalid
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(m).Error; err != nil {
+		return fmt.Errorf("insert roster receipt: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeRepository) InsertParticipantIfAbsent(ctx context.Context, participant *entity.Participant) (*entity.Participant, bool, error) {
+	db := helper.GetDB(ctx, r.db)
+	var existing model.Participant
+	if err := db.Where("exam_id = ? AND student_id = ?", participant.ExamID, participant.StudentID).First(&existing).Error; err == nil {
+		return mapper.ToParticipantEntity(&existing), false, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, fmt.Errorf("find existing roster participant: %w", err)
+	}
+	m := mapper.ToParticipantModel(participant)
+	if err := db.Create(m).Error; err != nil {
+		if isDuplicateKey(err) {
+			if lookupErr := db.Where("exam_id = ? AND student_id = ?", participant.ExamID, participant.StudentID).First(&existing).Error; lookupErr == nil {
+				return mapper.ToParticipantEntity(&existing), false, nil
+			}
+			return nil, false, node_error.ErrRosterCodeConflict
+		}
+		return nil, false, fmt.Errorf("insert roster participant: %w", err)
+	}
+	return mapper.ToParticipantEntity(m), true, nil
+}
+
+func isDuplicateKey(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	var mysqlErr *mysqlDriver.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
+}
+
+func (r *nodeRepository) UpdateExamRosterState(ctx context.Context, examID string, revision int64, contentHash string) error {
+	db := helper.GetDB(ctx, r.db)
+	result := db.Model(&model.Exam{}).Where("id = ?", examID).Updates(map[string]interface{}{
+		"roster_revision": revision,
+		"content_hash":    contentHash,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("update exam roster state: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return node_error.ErrExamNotLoaded
+	}
+	return nil
+}
+
+func (r *nodeRepository) CountProcessedRosterReceipts(ctx context.Context, deploymentID string, revision int64) (int64, error) {
+	db := helper.GetDB(ctx, r.db)
+	var count int64
+	if err := db.Model(&model.RosterEventReceipt{}).
+		Where("deployment_id = ? AND revision > 0 AND revision <= ? AND status IN ?", deploymentID, revision,
+			[]string{string(entity.RosterEventApplied), string(entity.RosterEventRejected), string(entity.RosterEventExpired), string(entity.RosterEventCancelled)}).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count processed roster receipts: %w", err)
+	}
+	return count, nil
 }
 
 func (r *nodeRepository) FindActiveAttemptByParticipant(ctx context.Context, pid string) (*entity.Attempt, error) {
@@ -298,6 +379,10 @@ func (r *nodeRepository) FindExamByIDForUpdate(ctx context.Context, examID strin
 		return nil, fmt.Errorf("find exam by id for update: %w", err)
 	}
 	return mapper.ToExamEntity(&m), nil
+}
+
+func (r *nodeRepository) FindExamForUpdate(ctx context.Context, examID string) (*entity.Exam, error) {
+	return r.FindExamByIDForUpdate(ctx, examID)
 }
 
 func (r *nodeRepository) ListItemsByExamID(ctx context.Context, examID string) ([]entity.Item, error) {

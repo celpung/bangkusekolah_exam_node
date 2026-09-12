@@ -19,6 +19,7 @@ import (
 	helper "github.com/celpung/bangkusekolah_exam_node/app/adapter/persistence/repository/helper"
 	node_security "github.com/celpung/bangkusekolah_exam_node/app/adapter/security"
 	"github.com/celpung/bangkusekolah_exam_node/app/config"
+	"github.com/celpung/bangkusekolah_exam_node/app/port/outbound"
 	outbound_repository "github.com/celpung/bangkusekolah_exam_node/app/port/outbound/repository"
 	"github.com/celpung/bangkusekolah_exam_node/app/service"
 )
@@ -63,6 +64,14 @@ func main() {
 	} else {
 		log.Printf("attempt reset worker disabled: reset persistence capability is unavailable")
 	}
+	var rosterWorker *service.RosterWorker
+	if rosterRepo, ok := repo.(outbound.RosterRepository); ok {
+		rosterSvc := service.NewRosterService(rosterRepo, txManager, idGen, contentSvc)
+		rosterClient := nodecentral.NewRosterClient(cfg)
+		rosterWorker = service.NewRosterWorker(rosterClient, rosterSvc)
+	} else {
+		log.Printf("roster worker disabled: roster persistence capability is unavailable")
+	}
 	sweeperSvc := service.NewSweeperService(repo, txManager)
 	harvestSvc.SetSweeper(sweeperSvc)
 	authSvc := service.NewAuthServiceWithLimits(repo, issuer, cfg.JWTTTL, cfg.LoginRateLimit, cfg.LoginRateWindow)
@@ -76,6 +85,9 @@ func main() {
 	}
 	if resetWorker != nil {
 		go resetWorker.Start(context.Background(), cfg.AttemptResetPollInterval)
+	}
+	if rosterWorker != nil {
+		go rosterWorker.Start(context.Background(), cfg.RosterPollInterval)
 	}
 
 	r := chi.NewRouter()

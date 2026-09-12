@@ -23,6 +23,7 @@ type Config struct {
 	DeploymentID             string
 	HarvestInterval          time.Duration
 	AttemptResetPollInterval time.Duration
+	RosterPollInterval       time.Duration
 	SweepInterval            time.Duration
 	HeartbeatInterval        time.Duration
 	LoginRateLimit           int
@@ -42,6 +43,7 @@ const (
 	defaultJWTTTL                   = 90 * time.Minute
 	defaultHarvestInterval          = 5 * time.Minute
 	defaultAttemptResetPollInterval = 5 * time.Second
+	defaultRosterPollInterval       = 5 * time.Second
 	defaultSweepInterval            = time.Minute
 	defaultHeartbeatInterval        = time.Minute
 	defaultLoginRateLimit           = 10
@@ -64,6 +66,7 @@ func Load() (*Config, error) {
 		DeploymentID:             os.Getenv("DEPLOYMENT_ID"),
 		HarvestInterval:          durationFromEnv("HARVEST_INTERVAL", defaultHarvestInterval),
 		AttemptResetPollInterval: durationFromEnv("ATTEMPT_RESET_POLL_INTERVAL", defaultAttemptResetPollInterval),
+		RosterPollInterval:       durationFromEnv("ROSTER_POLL_INTERVAL", defaultRosterPollInterval),
 		SweepInterval:            durationFromEnv("SWEEP_INTERVAL", defaultSweepInterval),
 		HeartbeatInterval:        durationFromEnv("HEARTBEAT_INTERVAL", defaultHeartbeatInterval),
 		LoginRateLimit:           intFromEnv("LOGIN_RATE_LIMIT", defaultLoginRateLimit),

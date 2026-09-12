@@ -21,6 +21,7 @@ type Exam struct {
 	AccessCodePrefix      string     `gorm:"type:varchar(10);not null"`
 	BundleChecksum        string     `gorm:"type:varchar(80);not null"`
 	ContentHash           string     `gorm:"type:varchar(80);not null;default:''"`
+	RosterRevision        int64      `gorm:"not null;default:0"`
 	FencedAt              *time.Time `gorm:"type:datetime"`
 	LoadedAt              time.Time  `gorm:"type:datetime;not null"`
 }
@@ -51,6 +52,7 @@ type Participant struct {
 	StudentID       string  `gorm:"type:varchar(36);not null"`
 	StudentName     string  `gorm:"type:varchar(255);not null"`
 	AccessCode      string  `gorm:"type:varchar(20);not null;uniqueIndex:uniq_participants_access_code"`
+	RosterRevision  int64   `gorm:"not null;default:0"`
 	AttemptCount    int     `gorm:"not null;default:0"`
 	LatestAttemptID *string `gorm:"type:varchar(36)"`
 }

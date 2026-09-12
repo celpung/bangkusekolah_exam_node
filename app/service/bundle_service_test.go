@@ -20,6 +20,33 @@ type fakeBundleRepo struct {
 	loadCalls    int
 }
 
+type terminalRosterBundleRepo struct {
+	*fakeBundleRepo
+	receipts int64
+}
+
+func (r terminalRosterBundleRepo) CountProcessedRosterReceipts(_ context.Context, deploymentID string, revision int64) (int64, error) {
+	if deploymentID != r.exam.DeploymentID || revision != r.exam.RosterRevision {
+		return 0, errors.New("wrong deployment/revision scope")
+	}
+	return r.receipts, nil
+}
+
+func TestPreflightAcceptsProcessedTerminalRevision(t *testing.T) {
+	exam := &entity.Exam{ID: "exam-1", DeploymentID: "deployment-1", BundleChecksum: "baseline", RosterRevision: 2}
+	exam.ContentHash = contentHash(nil, nil, exam)
+	repo := terminalRosterBundleRepo{fakeBundleRepo: &fakeBundleRepo{exam: exam}, receipts: 2}
+	svc := NewBundleService(repo, nil, nil)
+	if err := svc.PreflightRoster(context.Background(), exam.ID, 0, 0, 0, 2); err != nil {
+		t.Fatalf("terminal receipt must count towards processed revision: %v", err)
+	}
+	repo.receipts = 1
+	svc = NewBundleService(repo, nil, nil)
+	if err := svc.PreflightRoster(context.Background(), exam.ID, 0, 0, 0, 2); !errors.Is(err, node_error.ErrPreflightFailed) {
+		t.Fatalf("missing receipt must fail preflight: %v", err)
+	}
+}
+
 func (f *fakeBundleRepo) CreateExam(_ context.Context, e *entity.Exam) error { f.exam = e; return nil }
 func (f *fakeBundleRepo) CreateItems(_ context.Context, items []entity.Item) error {
 	for i := range items {
@@ -186,6 +213,22 @@ func TestLoadBundleReplacesPreviousBundle(t *testing.T) {
 	}
 	if len(repo.items) != 1 || len(repo.participants) != 1 {
 		t.Fatalf("reload duplicated rows: items=%d participants=%d", len(repo.items), len(repo.participants))
+	}
+}
+
+func TestLoadBundleRejectsBaselineReplacementAfterRosterRevision(t *testing.T) {
+	svc, repo, _ := bundleFixture()
+	ctx := context.Background()
+	if err := svc.LoadBundle(ctx, fakeBundle()); err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	repo.exam.RosterRevision = 1
+	repo.exam.ContentHash = "sha256:roster-expanded"
+	if err := svc.LoadBundle(ctx, fakeBundle()); !errors.Is(err, node_error.ErrBundleRosterImmutable) {
+		t.Fatalf("replacement after roster revision: got %v, want ErrBundleRosterImmutable", err)
+	}
+	if repo.loadCalls != 1 {
+		t.Fatalf("immutable bundle replacement must not write, load calls=%d", repo.loadCalls)
 	}
 }
 

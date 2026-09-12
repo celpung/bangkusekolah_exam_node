@@ -63,6 +63,7 @@ type Exam struct {
 	AccessCodePrefix      string
 	BundleChecksum        string
 	ContentHash           string
+	RosterRevision        int64
 	FencedAt              *time.Time
 	LoadedAt              time.Time
 }
@@ -97,8 +98,32 @@ type Participant struct {
 	StudentID       string
 	StudentName     string
 	AccessCode      string
+	RosterRevision  int64
 	AttemptCount    int
 	LatestAttemptID *string
+}
+
+type RosterEventStatus string
+
+const (
+	RosterEventPending   RosterEventStatus = "pending"
+	RosterEventApplied   RosterEventStatus = "applied"
+	RosterEventRejected  RosterEventStatus = "rejected"
+	RosterEventExpired   RosterEventStatus = "expired"
+	RosterEventCancelled RosterEventStatus = "cancelled"
+)
+
+type RosterEventReceipt struct {
+	EventID       string
+	DeploymentID  string
+	ExamID        string
+	Revision      int64
+	ParticipantID string
+	PayloadHash   string
+	Status        RosterEventStatus
+	OutcomeCode   string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Attempt struct {
