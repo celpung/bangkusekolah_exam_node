@@ -21,6 +21,10 @@ cmd/bundleload runs BEFORE examnode starts and NEVER concurrently with it.
 - While `examnode` is serving students, bundle updates go exclusively through
   `POST /internal/v1/bundle` (central → node), where the per-exam lock,
   generation tokens, readiness gating, and rollback protocol apply in full.
+- Live participant additions are a separate roster protocol. The background
+  roster worker pulls Central roster events and inserts only the new participant
+  row after its deployment, deadline, fence, and revision checks; it never
+  invokes `bundleload` and never changes the baseline bundle checksum.
 
 ## Why this is safe
 

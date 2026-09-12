@@ -59,6 +59,29 @@ func ToParticipantModel(e *entity.Participant) *model.Participant {
 	return &model.Participant{ID: e.ID, ExamID: e.ExamID, StudentID: e.StudentID, StudentName: e.StudentName, AccessCode: e.AccessCode, RosterRevision: e.RosterRevision}
 }
 
+func ToRosterEventReceiptEntity(m *model.RosterEventReceipt) *entity.RosterEventReceipt {
+	if m == nil {
+		return nil
+	}
+	return &entity.RosterEventReceipt{
+		EventID: m.EventID, DeploymentID: m.DeploymentID, ExamID: m.ExamID,
+		Revision: m.Revision, ParticipantID: m.ParticipantID, PayloadHash: m.PayloadHash,
+		Status: entity.RosterEventStatus(m.Status), OutcomeCode: m.OutcomeCode,
+		CreatedAt: m.CreatedAt.UTC(), UpdatedAt: m.UpdatedAt.UTC(),
+	}
+}
+
+func ToRosterEventReceiptModel(e *entity.RosterEventReceipt) *model.RosterEventReceipt {
+	if e == nil {
+		return nil
+	}
+	return &model.RosterEventReceipt{
+		EventID: e.EventID, DeploymentID: e.DeploymentID, ExamID: e.ExamID,
+		Revision: e.Revision, ParticipantID: e.ParticipantID, PayloadHash: e.PayloadHash,
+		Status: string(e.Status), OutcomeCode: e.OutcomeCode, CreatedAt: e.CreatedAt.UTC(), UpdatedAt: e.UpdatedAt.UTC(),
+	}
+}
+
 func ToAttemptEntity(m *model.Attempt) *entity.Attempt {
 	if m == nil {
 		return nil

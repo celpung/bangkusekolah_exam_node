@@ -32,8 +32,10 @@ const (
 // structurally only.
 type deploymentExpectation struct {
 	Exams map[string]struct {
-		ItemCount        int `json:"item_count"`
-		ParticipantCount int `json:"participant_count"`
+		ItemCount             int    `json:"item_count"`
+		ParticipantCount      int    `json:"participant_count"`
+		TotalParticipantCount *int   `json:"total_participant_count,omitempty"`
+		RosterRevision        *int64 `json:"roster_revision,omitempty"`
 	} `json:"exams"`
 }
 
@@ -93,7 +95,15 @@ func main() {
 		// Full BundleService.Preflight when deployment expectations exist
 		// (counts + content hash); structural + content-hash checks otherwise.
 		if expect, ok := expects.Exams[exam.ID]; ok {
-			if err := bundleSvc.Preflight(ctx, exam.ID, expect.ItemCount, expect.ParticipantCount); err != nil {
+			totalParticipantCount := expect.ParticipantCount
+			if expect.TotalParticipantCount != nil {
+				totalParticipantCount = *expect.TotalParticipantCount
+			}
+			rosterRevision := int64(-1)
+			if expect.RosterRevision != nil {
+				rosterRevision = *expect.RosterRevision
+			}
+			if err := bundleSvc.PreflightRoster(ctx, exam.ID, expect.ItemCount, expect.ParticipantCount, totalParticipantCount, rosterRevision); err != nil {
 				fail("preflight exam %s vs deployment: %v", exam.ID, err)
 			}
 		} else {

@@ -189,6 +189,22 @@ func TestLoadBundleReplacesPreviousBundle(t *testing.T) {
 	}
 }
 
+func TestLoadBundleRejectsBaselineReplacementAfterRosterRevision(t *testing.T) {
+	svc, repo, _ := bundleFixture()
+	ctx := context.Background()
+	if err := svc.LoadBundle(ctx, fakeBundle()); err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	repo.exam.RosterRevision = 1
+	repo.exam.ContentHash = "sha256:roster-expanded"
+	if err := svc.LoadBundle(ctx, fakeBundle()); !errors.Is(err, node_error.ErrBundleRosterImmutable) {
+		t.Fatalf("replacement after roster revision: got %v, want ErrBundleRosterImmutable", err)
+	}
+	if repo.loadCalls != 1 {
+		t.Fatalf("immutable bundle replacement must not write, load calls=%d", repo.loadCalls)
+	}
+}
+
 func TestPreflightFailsWhenCountsMismatch(t *testing.T) {
 	svc, repo, _ := bundleFixture()
 	if err := svc.LoadBundle(context.Background(), fakeBundle()); err != nil {

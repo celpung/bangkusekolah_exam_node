@@ -74,7 +74,7 @@ scripts/maintenance/run-tool.sh examharvest --force
 ## D-1 Deploy
 
 1. SuperAdmin/Admin selects multiple exams and deploys them to a node in central: `POST /api/v1/exams/{id}/node-deployment` per exam (loop in `DeployExams`, Task 6) or a bulk `DeployExams` call. Mapping exam→VPS is displayed in the dashboard.
-2. On node: `scripts/maintenance/run-tool.sh bundleload --pull` pulls N bundles sequentially (one per deployment), verifies each checksum, and refreshes the running `examnode` cache when the process is already up. If `examnode` is stopped, the next startup rehydrates the same database snapshot.
+2. On node, while `examnode` is stopped: `scripts/maintenance/run-tool.sh bundleload --pull` pulls N bundles sequentially (one per deployment) and verifies each immutable baseline checksum. Do not run `bundleload` during an active exam. Once `examnode` starts, its roster worker pulls late-participant events from Central and applies them without replacing the baseline bundle.
 3. `scripts/maintenance/run-tool.sh preflight` — must print `PASS` per bundle. If any `FAIL`, fix and rerun. Do not proceed to D-0 with a `FAIL`.
 4. Verify: `curl -sf http://127.0.0.1:8080/livez` → 200, `curl -sf http://127.0.0.1:8080/readyz` → 200.
 5. Access codes are paperless — handshake is automatic via `ListStudentExams` enrichment (Task 9). `GET /api/v1/exams/{id}/node-deployment/access-codes` remains for administrative/diagnostic use only.

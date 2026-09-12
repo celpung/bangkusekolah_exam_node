@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -65,6 +66,13 @@ func canonicalBundleBytes(bundle inbound.ExamNodeBundle) []byte {
 func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeBundle) error {
 	unlock := s.contentSvc.LockExam(bundle.Exam.ID)
 	defer unlock()
+	if existing, err := s.repo.FindExamByID(ctx, bundle.Exam.ID); err == nil {
+		if existing.DeploymentID == bundle.DeploymentID && existing.RosterRevision > 0 {
+			return fmt.Errorf("%w: exam %s deployment %s", node_error.ErrBundleRosterImmutable, bundle.Exam.ID, bundle.DeploymentID)
+		}
+	} else if !errors.Is(err, node_error.ErrExamNotLoaded) {
+		return err
+	}
 
 	for _, item := range bundle.Items {
 		if item.QuestionType == "file_upload" {
@@ -147,6 +155,13 @@ func (s *BundleService) LoadBundle(ctx context.Context, bundle inbound.ExamNodeB
 // checksum recomputed from what is actually stored. Disk and clock checks
 // live in cmd/preflight — they need os.Stat and a network time source.
 func (s *BundleService) Preflight(ctx context.Context, examID string, expectedItemCount, expectedParticipantCount int) error {
+	return s.PreflightRoster(ctx, examID, expectedItemCount, expectedParticipantCount, expectedParticipantCount, -1)
+}
+
+// PreflightRoster keeps the original baseline participant count separate from
+// the current total after live roster additions. A negative roster revision
+// disables the new checks for older expectation files.
+func (s *BundleService) PreflightRoster(ctx context.Context, examID string, expectedItemCount, expectedBaselineParticipantCount, expectedTotalParticipantCount int, expectedRosterRevision int64) error {
 	exam, err := s.repo.FindExamByID(ctx, examID)
 	if err != nil {
 		return err
@@ -162,9 +177,32 @@ func (s *BundleService) Preflight(ctx context.Context, examID string, expectedIt
 	if err != nil {
 		return err
 	}
-	if len(items) != expectedItemCount || len(participants) != expectedParticipantCount {
+	if len(items) != expectedItemCount || len(participants) != expectedTotalParticipantCount {
 		return fmt.Errorf("%w: exam %s items %d/%d participants %d/%d",
-			node_error.ErrPreflightFailed, examID, len(items), expectedItemCount, len(participants), expectedParticipantCount)
+			node_error.ErrPreflightFailed, examID, len(items), expectedItemCount, len(participants), expectedTotalParticipantCount)
+	}
+	baselineCount := 0
+	for _, participant := range participants {
+		if participant.RosterRevision == 0 {
+			baselineCount++
+		}
+	}
+	if baselineCount != expectedBaselineParticipantCount {
+		return fmt.Errorf("%w: exam %s baseline participants %d/%d", node_error.ErrPreflightFailed, examID, baselineCount, expectedBaselineParticipantCount)
+	}
+	if expectedRosterRevision >= 0 && exam.RosterRevision != expectedRosterRevision {
+		return fmt.Errorf("%w: exam %s roster revision %d/%d", node_error.ErrPreflightFailed, examID, exam.RosterRevision, expectedRosterRevision)
+	}
+	if expectedRosterRevision >= 0 {
+		if receiptRepo, ok := s.repo.(outbound.RosterPreflightRepository); ok {
+			receipts, err := receiptRepo.CountAppliedReceiptsByExam(ctx, examID)
+			if err != nil {
+				return err
+			}
+			if receipts != exam.RosterRevision {
+				return fmt.Errorf("%w: exam %s applied receipts %d/roster revision %d", node_error.ErrPreflightFailed, examID, receipts, exam.RosterRevision)
+			}
+		}
 	}
 	// Content-hash re-verification: sections are not stored as rows, so the
 	// full bundle cannot be reconstructed from the DB byte-identically.
