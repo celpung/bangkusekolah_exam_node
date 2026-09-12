@@ -172,13 +172,18 @@ func (w *RosterWorker) Start(ctx context.Context, interval time.Duration) {
 	if w == nil || interval <= 0 {
 		return
 	}
-	if err := w.client.AnnounceCapabilities(ctx); err != nil {
-		// A central running the pre-roster binary is a supported rollout state;
-		// it must not prevent students from using the node's local sitting flow.
-		slog.WarnContext(ctx, "roster capability handshake unavailable", "error", err)
-	}
+	capabilityAnnounced := false
 	backoff := minRosterBackoff
 	for {
+		if !capabilityAnnounced {
+			if err := w.client.AnnounceCapabilities(ctx); err != nil {
+				// A central running the pre-roster binary is a supported rollout state;
+				// it must not prevent students from using the node's local sitting flow.
+				slog.WarnContext(ctx, "roster capability handshake unavailable", "error", err)
+			} else {
+				capabilityAnnounced = true
+			}
+		}
 		err := w.PollOnce(ctx)
 		if err != nil {
 			slog.ErrorContext(ctx, "roster worker poll failed", "error", err)

@@ -13,13 +13,16 @@ import (
 )
 
 type rosterWorkerClientStub struct {
-	pending       []inbound.RosterEvent
-	replay        []inbound.RosterEvent
-	outcomes      []inbound.RosterOutcome
-	ackErrors     int
-	announceError error
-	replayError   error
-	replayCursor  int64
+	pending        []inbound.RosterEvent
+	replay         []inbound.RosterEvent
+	outcomes       []inbound.RosterOutcome
+	ackErrors      int
+	announceError  error
+	announceErrors []error
+	announceCalls  int
+	onAnnounce     func(int)
+	replayError    error
+	replayCursor   int64
 }
 
 func (c *rosterWorkerClientStub) PullPending(context.Context) ([]inbound.RosterEvent, error) {
@@ -45,7 +48,18 @@ func (c *rosterWorkerClientStub) Acknowledge(_ context.Context, outcome inbound.
 	return nil
 }
 
-func (c *rosterWorkerClientStub) AnnounceCapabilities(context.Context) error { return c.announceError }
+func (c *rosterWorkerClientStub) AnnounceCapabilities(context.Context) error {
+	c.announceCalls++
+	if c.onAnnounce != nil {
+		c.onAnnounce(c.announceCalls)
+	}
+	if len(c.announceErrors) > 0 {
+		err := c.announceErrors[0]
+		c.announceErrors = c.announceErrors[1:]
+		return err
+	}
+	return c.announceError
+}
 
 type rosterWorkerProcessorStub struct {
 	exams        []entity.Exam
@@ -168,6 +182,26 @@ func TestRosterWorkerCapabilityFailureDoesNotBlockPolling(t *testing.T) {
 	}()
 	time.Sleep(5 * time.Millisecond)
 	cancel()
+}
+
+func TestRosterWorkerRetriesCapabilityAnnouncementAfterTransientFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	client := &rosterWorkerClientStub{
+		announceErrors: []error{errors.New("central unavailable"), nil},
+		onAnnounce: func(call int) {
+			if call == 2 {
+				time.AfterFunc(8*time.Millisecond, cancel)
+			}
+		},
+	}
+	worker := NewRosterWorker(client, &rosterWorkerProcessorStub{})
+
+	worker.Start(ctx, time.Millisecond)
+
+	if client.announceCalls != 2 {
+		t.Fatalf("capability announcements = %d, want 2", client.announceCalls)
+	}
 }
 
 func workerRosterEvent(eventID, deploymentID string, revision int64) inbound.RosterEvent {
