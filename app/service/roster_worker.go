@@ -68,6 +68,18 @@ func (w *RosterWorker) PollOnce(ctx context.Context) error {
 			firstErr = fmt.Errorf("process roster deployment %s: %w", deploymentID, err)
 		}
 	}
+	exams, err := w.processor.ListRosterExams(ctx)
+	if err != nil {
+		return fmt.Errorf("list loaded exams for roster recovery: %w", err)
+	}
+	for _, exam := range exams {
+		if exam.DeploymentID == "" || exam.FencedAt != nil {
+			continue
+		}
+		if err := w.replayDeployment(ctx, exam.DeploymentID, exam.RosterRevision, processed); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("recover roster deployment %s: %w", exam.DeploymentID, err)
+		}
+	}
 	return firstErr
 }
 
@@ -79,7 +91,7 @@ func (w *RosterWorker) processDeployment(ctx context.Context, deploymentID strin
 		}
 		outcome, err := w.processor.Apply(ctx, event)
 		if errors.Is(err, node_error.ErrRosterRevisionGap) {
-			if replayErr := w.replayDeployment(ctx, deploymentID, processed); replayErr != nil {
+			if replayErr := w.replayDeployment(ctx, deploymentID, 0, processed); replayErr != nil {
 				return replayErr
 			}
 			processed[event.EventID] = true
@@ -109,8 +121,7 @@ func (w *RosterWorker) processDeployment(ctx context.Context, deploymentID strin
 	return firstErr
 }
 
-func (w *RosterWorker) replayDeployment(ctx context.Context, deploymentID string, processed map[string]bool) error {
-	var afterRevision int64
+func (w *RosterWorker) replayDeployment(ctx context.Context, deploymentID string, afterRevision int64, processed map[string]bool) error {
 	for {
 		events, err := w.client.Replay(ctx, deploymentID, afterRevision)
 		if err != nil {

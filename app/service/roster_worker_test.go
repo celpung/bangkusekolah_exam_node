@@ -18,13 +18,19 @@ type rosterWorkerClientStub struct {
 	outcomes      []inbound.RosterOutcome
 	ackErrors     int
 	announceError error
+	replayError   error
+	replayCursor  int64
 }
 
 func (c *rosterWorkerClientStub) PullPending(context.Context) ([]inbound.RosterEvent, error) {
 	return append([]inbound.RosterEvent(nil), c.pending...), nil
 }
 
-func (c *rosterWorkerClientStub) Replay(context.Context, string, int64) ([]inbound.RosterEvent, error) {
+func (c *rosterWorkerClientStub) Replay(_ context.Context, _ string, afterRevision int64) ([]inbound.RosterEvent, error) {
+	c.replayCursor = afterRevision
+	if c.replayError != nil {
+		return nil, c.replayError
+	}
 	events := append([]inbound.RosterEvent(nil), c.replay...)
 	c.replay = nil
 	return events, nil
@@ -42,10 +48,42 @@ func (c *rosterWorkerClientStub) Acknowledge(_ context.Context, outcome inbound.
 func (c *rosterWorkerClientStub) AnnounceCapabilities(context.Context) error { return c.announceError }
 
 type rosterWorkerProcessorStub struct {
+	exams        []entity.Exam
 	mu           sync.Mutex
 	applyCalls   int
 	participants map[string]bool
 	gapOnce      bool
+}
+
+func (p *rosterWorkerProcessorStub) ListRosterExams(context.Context) ([]entity.Exam, error) {
+	return p.exams, nil
+}
+
+func TestRosterWorkerRecoversWithoutPendingEvents(t *testing.T) {
+	event := rosterEvent()
+	event.Status = string(entity.RosterEventApplied)
+	event.Deadline = time.Now().Add(-time.Hour)
+	client := &rosterWorkerClientStub{replay: []inbound.RosterEvent{event}}
+	repo := newRosterRepositoryFixture()
+	repo.exam.EndsAt = event.Deadline
+	worker := NewRosterWorker(client, newRosterServiceForTest(repo))
+	client.replayError = errors.New("offline")
+	if err := worker.PollOnce(context.Background()); err == nil {
+		t.Fatal("offline recovery must report failure")
+	}
+	client.replayError = nil
+	if err := worker.PollOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.participants[event.ParticipantID] == nil || repo.exam.RosterRevision != 1 {
+		t.Fatal("applied participant was not restored without pending events")
+	}
+	if err := worker.PollOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if client.replayCursor != 1 || repo.insertCalls != 1 {
+		t.Fatalf("recovery must resume at persisted revision without duplicate insert: cursor=%d inserts=%d", client.replayCursor, repo.insertCalls)
+	}
 }
 
 func (p *rosterWorkerProcessorStub) Apply(_ context.Context, event inbound.RosterEvent) (*inbound.RosterOutcome, error) {

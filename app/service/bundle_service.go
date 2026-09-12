@@ -195,12 +195,12 @@ func (s *BundleService) PreflightRoster(ctx context.Context, examID string, expe
 	}
 	if expectedRosterRevision >= 0 {
 		if receiptRepo, ok := s.repo.(outbound.RosterPreflightRepository); ok {
-			receipts, err := receiptRepo.CountAppliedReceiptsByExam(ctx, examID)
+			receipts, err := receiptRepo.CountProcessedRosterReceipts(ctx, exam.DeploymentID, exam.RosterRevision)
 			if err != nil {
 				return err
 			}
 			if receipts != exam.RosterRevision {
-				return fmt.Errorf("%w: exam %s applied receipts %d/roster revision %d", node_error.ErrPreflightFailed, examID, receipts, exam.RosterRevision)
+				return fmt.Errorf("%w: exam %s processed receipts %d/roster revision %d", node_error.ErrPreflightFailed, examID, receipts, exam.RosterRevision)
 			}
 		}
 	}

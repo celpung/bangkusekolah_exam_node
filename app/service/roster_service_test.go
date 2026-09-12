@@ -21,6 +21,13 @@ type fakeRosterRepository struct {
 	receiptError error
 }
 
+func (r *fakeRosterRepository) ListExams(context.Context) ([]entity.Exam, error) {
+	if r.exam == nil {
+		return nil, nil
+	}
+	return []entity.Exam{*r.exam}, nil
+}
+
 func (r *fakeRosterRepository) ListItemsByExamID(_ context.Context, _ string) ([]entity.Item, error) {
 	return nil, nil
 }

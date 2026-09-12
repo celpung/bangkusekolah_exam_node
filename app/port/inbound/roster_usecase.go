@@ -3,6 +3,8 @@ package inbound
 import (
 	"context"
 	"time"
+
+	"github.com/celpung/bangkusekolah_exam_node/app/domain/entity"
 )
 
 const RosterProtocolVersion = 1
@@ -31,5 +33,6 @@ type RosterOutcome struct {
 }
 
 type RosterUsecase interface {
+	ListRosterExams(ctx context.Context) ([]entity.Exam, error)
 	Apply(ctx context.Context, event RosterEvent) (*RosterOutcome, error)
 }

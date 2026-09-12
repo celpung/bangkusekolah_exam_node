@@ -7,6 +7,7 @@ import (
 )
 
 type RosterRepository interface {
+	ListExams(ctx context.Context) ([]entity.Exam, error)
 	FindReceipt(ctx context.Context, eventID string) (*entity.RosterEventReceipt, error)
 	InsertReceipt(ctx context.Context, receipt *entity.RosterEventReceipt) error
 	FindExamForUpdate(ctx context.Context, examID string) (*entity.Exam, error)
@@ -17,5 +18,5 @@ type RosterRepository interface {
 }
 
 type RosterPreflightRepository interface {
-	CountAppliedReceiptsByExam(ctx context.Context, examID string) (int64, error)
+	CountProcessedRosterReceipts(ctx context.Context, deploymentID string, revision int64) (int64, error)
 }

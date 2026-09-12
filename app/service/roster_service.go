@@ -27,6 +27,10 @@ func NewRosterService(repo outbound.RosterRepository, txManager outbound.TxManag
 	return &RosterService{repo: repo, txManager: txManager, idGen: idGen, contentSvc: contentSvc}
 }
 
+func (s *RosterService) ListRosterExams(ctx context.Context) ([]entity.Exam, error) {
+	return s.repo.ListExams(ctx)
+}
+
 func (s *RosterService) Apply(ctx context.Context, event inbound.RosterEvent) (*inbound.RosterOutcome, error) {
 	if err := validateRosterEvent(event); err != nil {
 		return nil, err

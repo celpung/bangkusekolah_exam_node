@@ -118,13 +118,14 @@ func (r *nodeRepository) UpdateExamRosterState(ctx context.Context, examID strin
 	return nil
 }
 
-func (r *nodeRepository) CountAppliedReceiptsByExam(ctx context.Context, examID string) (int64, error) {
+func (r *nodeRepository) CountProcessedRosterReceipts(ctx context.Context, deploymentID string, revision int64) (int64, error) {
 	db := helper.GetDB(ctx, r.db)
 	var count int64
 	if err := db.Model(&model.RosterEventReceipt{}).
-		Where("exam_id = ? AND status = ?", examID, string(entity.RosterEventApplied)).
+		Where("deployment_id = ? AND revision > 0 AND revision <= ? AND status IN ?", deploymentID, revision,
+			[]string{string(entity.RosterEventApplied), string(entity.RosterEventRejected), string(entity.RosterEventExpired), string(entity.RosterEventCancelled)}).
 		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count applied roster receipts: %w", err)
+		return 0, fmt.Errorf("count processed roster receipts: %w", err)
 	}
 	return count, nil
 }
