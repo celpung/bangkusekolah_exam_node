@@ -1,0 +1,51 @@
+{
+  "bundle_version": 1,
+  "deployment_id": "dep-compat-1",
+  "exam": {
+    "id": "exam-compat-1",
+    "title": "UTS Matematika",
+    "instruction": "Kerjakan dengan jujur",
+    "starts_at": "2026-09-15T01:00:00Z",
+    "ends_at": "2026-09-15T03:00:00Z",
+    "duration_minutes": 90,
+    "max_attempts": 1,
+    "shuffle_questions": false,
+    "shuffle_options": false,
+    "show_result_immediately": false,
+    "passing_score": null,
+    "result_selection_policy": "best_score"
+  },
+  "sections": [
+    {
+      "id": "sec-compat-1",
+      "title": "Bagian A",
+      "instruction": null,
+      "sort_order": 1
+    }
+  ],
+  "items": [
+    {
+      "id": "item-compat-1",
+      "section_id": "sec-compat-1",
+      "question_type": "single_choice",
+      "prompt_snapshot": "2 + 2 = ?",
+      "options_snapshot_json": null,
+      "answer_key_snapshot_json": {
+        "answer": "4"
+      },
+      "points": 10,
+      "sort_order": 1,
+      "requires_manual_grading": false,
+      "rubric_criteria": []
+    }
+  ],
+  "participants": [
+    {
+      "id": "part-compat-1",
+      "student_id": "student-compat-1",
+      "student_name": "Compatibility Student",
+      "access_code": "ABCDEF-123456"
+    }
+  ],
+  "checksum": "sha256:1ba11e3174aaf39db4090b9b67d608d9bdb88c4ff580c13f8d18f308e6381357"
+}
