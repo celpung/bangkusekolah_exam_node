@@ -15,6 +15,17 @@ func setRequired(t *testing.T) {
 
 func TestLoadAppliesTheDocumentedPoolDefaults(t *testing.T) {
 	setRequired(t)
+	for _, key := range []string{
+		"DB_MAX_OPEN_CONNS",
+		"DB_MAX_IDLE_CONNS",
+		"DB_CONN_MAX_LIFETIME",
+		"MAX_INFLIGHT_REQUESTS",
+		"NODE_JWT_TTL",
+		"HARVEST_INTERVAL",
+		"SWEEP_INTERVAL",
+	} {
+		t.Setenv(key, "")
+	}
 
 	cfg, err := Load()
 	if err != nil {
