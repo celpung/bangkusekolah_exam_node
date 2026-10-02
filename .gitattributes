@@ -1,0 +1,2 @@
+# Shared grading fixtures must retain their canonical Git bytes on every OS.
+testdata/grading/vectors.json -text

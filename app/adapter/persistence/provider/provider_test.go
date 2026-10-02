@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -26,8 +27,12 @@ func TestNormalizeDBDSNForcesUTCAndParseTime(t *testing.T) {
 }
 
 func TestConnectAppliesThePoolBounds(t *testing.T) {
+	dsn := os.Getenv("TEST_DB_DSN")
+	if dsn == "" {
+		t.Skip("TEST_DB_DSN not set")
+	}
 	cfg := &config.Config{
-		DBDSN:             "user:pass@tcp(127.0.0.1:3306)/examnode?parseTime=true",
+		DBDSN:             dsn,
 		DBMaxOpenConns:    7,
 		DBMaxIdleConns:    3,
 		DBConnMaxLifetime: time.Minute,
@@ -35,7 +40,7 @@ func TestConnectAppliesThePoolBounds(t *testing.T) {
 
 	db, err := Connect(cfg)
 	if err != nil {
-		t.Skipf("no database available: %v", err)
+		t.Fatalf("connect test database: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
